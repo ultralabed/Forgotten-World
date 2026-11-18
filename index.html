@@ -1,0 +1,284 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>The Forgotten World</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Marcellus&display=swap">
+<style>
+/* Layout: full-screen 3D view; a thin inscription-style HUD floats over it. Single dusk look by choice. */
+:root{
+  color-scheme:dark;
+  --bg:#141a1f; --fg:#f0e6d6; --muted:#b9a98f; --gold:#e8b872; --glow:#7fe3d0; --veil:rgba(14,18,22,.72);
+  --font-d:'Marcellus','Trajan Pro',Georgia,serif;
+  --font-b:system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-b);overflow:hidden;-webkit-user-select:none;user-select:none}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.hud{position:fixed;left:0;right:0;pointer-events:none;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.hud.top{top:0;padding-top:calc(12px + env(safe-area-inset-top,0px))}
+.hud.bottom{bottom:0;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px));justify-content:center}
+.name{font-family:var(--font-d);font-size:17px;letter-spacing:.14em;text-transform:uppercase;text-shadow:0 1px 8px #000}
+#count{font-family:var(--font-d);font-size:17px;letter-spacing:.08em;color:var(--gold);text-shadow:0 1px 8px #000;white-space:nowrap}
+#hint{font-size:13px;color:var(--fg);background:var(--veil);padding:7px 12px;border-radius:999px;text-align:center;max-width:100%}
+#toast{position:fixed;left:50%;bottom:22%;transform:translateX(-50%);width:min(520px,calc(100% - 32px));text-align:center;pointer-events:none;
+  font-family:var(--font-d);font-size:20px;line-height:1.45;text-wrap:balance;color:var(--fg);text-shadow:0 2px 14px #000,0 0 3px #000;opacity:0;transition:opacity .8s}
+#toast.on{opacity:1}
+#stick{position:fixed;width:96px;height:96px;margin:-48px 0 0 -48px;border-radius:50%;border:2px solid rgba(240,230,214,.45);pointer-events:none}
+#stick i{position:absolute;left:50%;top:50%;width:36px;height:36px;margin:-18px 0 0 -18px;border-radius:50%;background:rgba(240,230,214,.55)}
+#intro{position:fixed;inset:0;display:flex;align-items:flex-end;justify-content:center;
+  background:linear-gradient(180deg,rgba(14,18,22,.15) 0%,rgba(14,18,22,.15) 45%,rgba(14,18,22,.88) 100%);
+  padding:24px max(16px,env(safe-area-inset-right,0px)) calc(40px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.panel{max-width:520px;text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center}
+.panel h1{font-family:var(--font-d);font-weight:400;font-size:clamp(34px,9vw,56px);letter-spacing:.06em;margin:0;line-height:1.05;text-wrap:balance;text-shadow:0 2px 18px #000}
+.panel p{margin:0;color:var(--fg);line-height:1.55;font-size:15px;max-width:44ch;text-shadow:0 1px 8px #000}
+.panel small{color:var(--muted);font-size:13px;line-height:1.5}
+#enter{font-family:var(--font-d);font-size:19px;letter-spacing:.16em;text-transform:uppercase;color:#1a1410;background:var(--gold);border:0;border-radius:4px;padding:13px 34px;cursor:pointer;min-height:48px}
+#enter:focus-visible{outline:2px solid var(--fg);outline-offset:3px}
+#fail{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;line-height:1.6}
+</style>
+
+<canvas id="gl" aria-label="A ruined stone ring in a foggy valley at dusk"></canvas>
+<div class="hud top"><div class="name">The Forgotten World</div><div id="count" hidden>Relics 0 / 5</div></div>
+<div class="hud bottom"><div id="hint" hidden></div></div>
+<div id="toast" role="status"></div>
+<div id="stick" hidden><i></i></div>
+<div id="intro">
+  <div class="panel">
+    <h1>The Forgotten World</h1>
+    <p>A ring of stone stands in a valley nobody has a name for. Five relics still glow somewhere in the grass. Walk, and find what was left behind.</p>
+    <button id="enter" type="button">Enter</button>
+    <small id="how"></small>
+  </div>
+</div>
+<div id="fail" hidden>This scene needs WebGL, and this browser could not start it.</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+function $(id){return document.getElementById(id)}
+if(!window.THREE){$('fail').hidden=false;return}
+var T=THREE,COARSE=window.matchMedia&&matchMedia('(pointer:coarse)').matches;
+$('how').textContent=COARSE?'Left thumb walks. Right thumb looks around.':'Drag to look. W A S D or arrow keys to walk. Hold Shift to run.';
+
+/* ---------- noise + terrain shape ---------- */
+function h2(x,y){var s=Math.sin(x*127.1+y*311.7)*43758.5453;return s-Math.floor(s)}
+function vn(x,y){var xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi,u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+  var a=h2(xi,yi),b=h2(xi+1,yi),c=h2(xi,yi+1),d=h2(xi+1,yi+1);return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v}
+function fbm(x,y){var s=0,a=0.5;for(var i=0;i<5;i++){s+=a*vn(x,y);x*=2.03;y*=2.03;a*=0.5}return s}
+function sstep(a,b,x){var t=Math.min(1,Math.max(0,(x-a)/(b-a)));return t*t*(3-2*t)}
+var WATER=-3;
+function height(x,z){var d=Math.hypot(x,z);
+  var h=(fbm(x*0.012+5,z*0.012+9)-0.47)*48+(fbm(x*0.06,z*0.06)-0.5)*5+Math.max(0,d-110)*0.45;
+  var t=sstep(24,62,d);return 2+(h-2)*t}
+function ground(x,z){var d=Math.hypot(x,z);if(d<17)return 2.5;if(d<19)return 2.2;return height(x,z)}
+var seed=7;function rnd(){seed=(seed*16807)%2147483647;return(seed-1)/2147483646}
+
+/* ---------- renderer ---------- */
+var renderer;
+try{renderer=new T.WebGLRenderer({canvas:$('gl'),antialias:!COARSE,powerPreference:'high-performance'})}catch(e){$('fail').hidden=false;return}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,COARSE?1.5:2));
+renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
+var scene=new T.Scene(),HOR=new T.Color(0.58,0.46,0.38),ZEN=new T.Color(0.07,0.16,0.30);
+scene.fog=new T.FogExp2(HOR.getHex(),0.0085);
+var camera=new T.PerspectiveCamera(62,1,0.1,1600);
+function resize(){var w=window.innerWidth,h=window.innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.fov=w<h?72:62;camera.updateProjectionMatrix()}
+window.addEventListener('resize',resize);resize();
+
+/* ---------- light + sky ---------- */
+var SUN=new T.Vector3(-0.55,0.26,-0.79).normalize();
+var sun=new T.DirectionalLight(0xffc98f,2.4);sun.position.copy(SUN).multiplyScalar(140);sun.castShadow=true;
+var sm=COARSE?1024:2048;sun.shadow.mapSize.set(sm,sm);
+var sc=sun.shadow.camera;sc.left=-55;sc.right=55;sc.top=55;sc.bottom=-55;sc.near=10;sc.far=320;sun.shadow.bias=-0.0006;sun.shadow.normalBias=0.04;
+scene.add(sun);scene.add(new T.HemisphereLight(0x8fb4d6,0x3b3122,0.62));
+var skyG=new T.SphereGeometry(1200,48,24),sp=skyG.attributes.position,skyC=new Float32Array(sp.count*3),v=new T.Vector3(),c=new T.Color();
+for(var i=0;i<sp.count;i++){v.fromBufferAttribute(sp,i).normalize();var hh=Math.max(v.y,0);
+  c.copy(HOR).lerp(ZEN,Math.pow(hh,0.62));var s=Math.max(v.dot(SUN),0),g=Math.pow(s,6)*0.55;
+  c.r+=1.0*g;c.g+=0.62*g;c.b+=0.30*g;if(v.y<0)c.copy(HOR);skyC[i*3]=c.r;skyC[i*3+1]=c.g;skyC[i*3+2]=c.b}
+skyG.setAttribute('color',new T.BufferAttribute(skyC,3));
+var sky=new T.Mesh(skyG,new T.MeshBasicMaterial({vertexColors:true,side:T.BackSide,fog:false,depthWrite:false}));scene.add(sky);
+var disc=new T.Mesh(new T.CircleGeometry(38,32),new T.MeshBasicMaterial({color:0xfff0c8,fog:false,transparent:true,opacity:0.95,depthWrite:false}));
+scene.add(disc);
+
+/* ---------- stone texture ---------- */
+function stoneTex(){var n=256,cv=document.createElement('canvas');cv.width=cv.height=n;var x=cv.getContext('2d'),im=x.createImageData(n,n),d=im.data;
+  for(var j=0;j<n;j++)for(var i=0;i<n;i++){var f=fbm(i*0.05,j*0.05),g=fbm(i*0.3+40,j*0.3+17),m=fbm(i*0.02+90,j*0.02+3);
+    var crack=Math.abs(fbm(i*0.035+11,j*0.035+70)-0.5)<0.012?0.55:1;
+    var b=(0.52+f*0.5+g*0.22)*crack,moss=sstep(0.55,0.68,m),k=(j*n+i)*4;
+    d[k]=255*Math.min(1,b*(0.80-moss*0.40));d[k+1]=255*Math.min(1,b*(0.76-moss*0.28));d[k+2]=255*Math.min(1,b*(0.68-moss*0.44));d[k+3]=255}
+  x.putImageData(im,0,0);var t=new T.CanvasTexture(cv);t.wrapS=t.wrapT=T.RepeatWrapping;t.encoding=T.sRGBEncoding;t.anisotropy=4;return t}
+var stMap=stoneTex();
+var stone=new T.MeshStandardMaterial({map:stMap,bumpMap:stMap,bumpScale:0.09,roughness:0.95,metalness:0});
+function jitter(g,amt){var p=g.attributes.position;for(var i=0;i<p.count;i++){var x=p.getX(i),y=p.getY(i),z=p.getZ(i);
+  p.setXYZ(i,x+(h2(x*13.1+z*7.7,y*5.3)-0.5)*amt,y+(h2(y*9.7+x*3.1,z*8.3)-0.5)*amt,z+(h2(z*11.3+y*4.1,x*6.7)-0.5)*amt)}
+  g.computeVertexNormals();return g}
+var E=new T.Euler(),Q=new T.Quaternion(),P=new T.Vector3(),S3=new T.Vector3();
+function M(px,py,pz,rx,ry,rz,sx,sy,sz){E.set(rx||0,ry||0,rz||0);Q.setFromEuler(E);P.set(px,py,pz);S3.set(sx||1,sy||sx||1,sz||sx||1);return new T.Matrix4().compose(P,Q,S3)}
+function inst(geo,mat,mats,shadow){var m=new T.InstancedMesh(geo,mat,mats.length);for(var i=0;i<mats.length;i++)m.setMatrixAt(i,mats[i]);
+  m.castShadow=!!shadow;m.receiveShadow=true;m.frustumCulled=false;scene.add(m);return m}
+
+/* ---------- terrain ---------- */
+(function(){var N=COARSE?170:230,g=new T.PlaneGeometry(640,640,N,N);g.rotateX(-Math.PI/2);var p=g.attributes.position;
+  for(var i=0;i<p.count;i++)p.setY(i,height(p.getX(i),p.getZ(i)));g.computeVertexNormals();
+  var nr=g.attributes.normal,col=new Float32Array(p.count*3);
+  for(i=0;i<p.count;i++){var x=p.getX(i),y=p.getY(i),z=p.getZ(i),ny=nr.getY(i),n=fbm(x*0.09+3,z*0.09+8);
+    var r=0.13+n*0.10,gg=0.21+n*0.13,b=0.07+n*0.04;                 /* meadow */
+    var rock=1-sstep(0.72,0.90,ny);r+=(0.30-r)*rock;gg+=(0.28-gg)*rock;b+=(0.25-b)*rock;
+    var mud=1-sstep(WATER,WATER+2.2,y);r+=(0.16-r)*mud;gg+=(0.14-gg)*mud;b+=(0.10-b)*mud;
+    var hi=sstep(22,46,y);r+=(0.34-r)*hi;gg+=(0.33-gg)*hi;b+=(0.31-b)*hi;
+    col[i*3]=r;col[i*3+1]=gg;col[i*3+2]=b}
+  g.setAttribute('color',new T.BufferAttribute(col,3));
+  var m=new T.Mesh(g,new T.MeshStandardMaterial({vertexColors:true,roughness:1,metalness:0}));m.receiveShadow=true;scene.add(m);
+  var w=new T.Mesh(new T.PlaneGeometry(640,640),new T.MeshStandardMaterial({color:0x16343a,roughness:0.12,metalness:0.35,transparent:true,opacity:0.9}));
+  w.rotation.x=-Math.PI/2;w.position.y=WATER;scene.add(w)})();
+
+/* ---------- the ring ---------- */
+var colliders=[];
+(function(){
+  var fl=new T.Mesh(jitter(new T.CylinderGeometry(17,17.5,0.6,56,1),0.08),stone);fl.position.y=2.2;fl.receiveShadow=true;scene.add(fl);
+  var st=new T.Mesh(new T.CylinderGeometry(19,19.6,0.3,56,1),stone);st.position.y=2.05;st.receiveShadow=true;scene.add(st);
+  var drum=jitter(new T.CylinderGeometry(0.82,0.86,1.5,14,1),0.07),drums=[],caps=[],lint=[],N=12,full=[];
+  for(var i=0;i<N;i++){var a=i/N*Math.PI*2+0.13,x=Math.cos(a)*14,z=Math.sin(a)*14,k=[5,5,3,5,1,5,5,2,5,4,5,5][i];full.push(k===5);
+    for(var j=0;j<k;j++)drums.push(M(x+(rnd()-0.5)*0.10,2.5+0.75+j*1.5,z+(rnd()-0.5)*0.10,0,rnd()*6.28,0,1-j*0.015,1,1-j*0.015));
+    if(k===5)caps.push(M(x,2.5+7.5+0.22,z,0,-a,0,2.1,0.45,2.1));
+    colliders.push({x:x,z:z,r:1.25})}
+  for(i=0;i<N;i++){var n=(i+1)%N;if(full[i]&&full[n]&&i!==6){var a1=i/N*6.2832+0.13,a2=a1+6.2832/N,mx=(Math.cos(a1)+Math.cos(a2))*7,mz=(Math.sin(a1)+Math.sin(a2))*7;
+    lint.push(M(mx,2.5+7.5+0.45+0.42,mz,0,-(a1+a2)/2+Math.PI/2,0,7.6,0.85,1.5))}}
+  /* fallen drums and blocks */
+  [[9,-21,0.4],[-20,6,1.9],[-23,9,2.2],[5,22,0.9],[22,14,2.8],[-6,-24,1.2],[-3,6,0.3],[7,-5,2.0]].forEach(function(f){
+    var y=ground(f[0],f[1])+0.78;drums.push(M(f[0],y,f[1],Math.PI/2,0,f[2],1,1,1));colliders.push({x:f[0],z:f[1],r:1.3})});
+  inst(drum,stone,drums,true);
+  var box=jitter(new T.BoxGeometry(1,1,1,3,3,3),0.035);inst(box,stone,caps.concat(lint),true);
+  /* broken walls + gateway */
+  var walls=[];for(i=0;i<9;i++){var a=i/9*6.2832+0.6+rnd()*0.3;if(Math.abs(Math.sin(a))>0.93&&Math.sin(a)>0)continue;
+    var r=25+rnd()*3,wx=Math.cos(a)*r,wz=Math.sin(a)*r,hgt=1.2+rnd()*3.6,len=4+rnd()*4;
+    walls.push(M(wx,ground(wx,wz)+hgt/2-0.3,wz,(rnd()-0.5)*0.06,-a+Math.PI/2,(rnd()-0.5)*0.07,len,hgt,1.1));colliders.push({x:wx,z:wz,r:len*0.42})}
+  [-3.2,3.2].forEach(function(gx){walls.push(M(gx,ground(gx,31)+3.2,31,0,0,0,1.7,7,1.7));colliders.push({x:gx,z:31,r:1.4})});
+  walls.push(M(0,ground(0,31)+7.2,31,0,0,0.02,9.4,1.2,2.0));
+  for(i=0;i<16;i++){var px=(rnd()-0.5)*2.6,pz=33+i*2.2;walls.push(M(px,ground(px,pz)-0.05,pz,0,rnd()*0.5,0,0.9+rnd()*0.6,0.22,0.9+rnd()*0.6))}
+  inst(box,stone,walls,true);
+  /* heart of the ring */
+  var ob=new T.Mesh(jitter(new T.CylinderGeometry(0.55,1.15,8,4,3),0.10),stone);ob.position.set(0,6.5,0);ob.rotation.y=0.6;ob.castShadow=true;scene.add(ob);
+  var base=new T.Mesh(box,stone);base.scale.set(3.6,0.7,3.6);base.position.set(0,2.85,0);base.castShadow=base.receiveShadow=true;scene.add(base);
+  colliders.push({x:0,z:0,r:2.9});
+})();
+var orb=new T.Mesh(new T.SphereGeometry(0.42,24,16),new T.MeshBasicMaterial({color:0x9ff5e2,fog:false}));orb.position.set(0,12,0);scene.add(orb);
+var orbL=new T.PointLight(0x7fe3d0,1.2,34,2);orbL.position.copy(orb.position);scene.add(orbL);
+
+/* ---------- forest, rocks, grass ---------- */
+(function(){
+  var trunks=[],cones=[],cc=[],nT=COARSE?170:300,tries=0;
+  while(trunks.length<nT&&tries++<4000){var a=rnd()*6.2832,r=30+Math.pow(rnd(),0.8)*250,x=Math.cos(a)*r,z=Math.sin(a)*r,y=height(x,z);
+    if(y<WATER+0.8||y>30)continue;if(Math.abs(x)<7&&z>20&&z<75)continue;if(fbm(x*0.02+50,z*0.02+20)<0.44)continue;
+    var s=0.75+rnd()*0.9,ry=rnd()*6.28,tilt=(rnd()-0.5)*0.08;trunks.push(M(x,y+2.6*s,z,tilt,ry,tilt,s,s,s));
+    for(var k=0;k<4;k++){cones.push(M(x,y+(3.4+k*2.1)*s,z,tilt,ry+k,tilt,s*(1.25-k*0.24),s,s*(1.25-k*0.24)));cc.push(0.75+rnd()*0.5)}
+    if(r<70)colliders.push({x:x,z:z,r:0.7*s})}
+  inst(new T.CylinderGeometry(0.16,0.42,5.6,6,1),new T.MeshStandardMaterial({color:0x2c2118,roughness:1}),trunks,true);
+  var cm=inst(jitter(new T.ConeGeometry(2.3,3.8,11,3),0.55),new T.MeshStandardMaterial({color:0xffffff,roughness:1}),cones,true);
+  for(var i=0;i<cc.length;i++)cm.setColorAt(i,c.setRGB(0.045*cc[i],0.115*cc[i],0.07*cc[i]));cm.instanceColor.needsUpdate=true;
+
+  var rocks=[];for(i=0;i<150;i++){a=rnd()*6.2832;r=21+rnd()*150;x=Math.cos(a)*r;z=Math.sin(a)*r;y=height(x,z);if(y<WATER-0.5)continue;
+    s=0.3+Math.pow(rnd(),3)*2.6;rocks.push(M(x,y+s*0.15,z,rnd()*3,rnd()*3,rnd()*3,s*(0.8+rnd()*0.8),s*(0.5+rnd()*0.5),s))}
+  inst(jitter(new T.DodecahedronGeometry(1,1),0.28),stone,rocks,true);
+
+  var bg=new T.BufferGeometry();
+  bg.setAttribute('position',new T.BufferAttribute(new Float32Array([-0.022,0,0, 0.022,0,0, 0,0.42,0]),3));
+  bg.setAttribute('normal',new T.BufferAttribute(new Float32Array([0,1,0,0,1,0,0,1,0]),3));
+  var blades=[],bc=[],nB=COARSE?26000:70000;
+  for(i=0;i<nB;i++){a=rnd()*6.2832;r=19.6+Math.sqrt(rnd())*56;x=Math.cos(a)*r;z=Math.sin(a)*r;y=height(x,z);if(y<WATER+0.15)continue;
+    if(Math.abs(x)<1.6&&z>32&&z<70)continue;s=0.5+rnd()*0.9;blades.push(M(x,y-0.03,z,(rnd()-0.5)*0.5,rnd()*6.28,(rnd()-0.5)*0.5,1+rnd(),s,1));bc.push(rnd())}
+  var gm=new T.MeshLambertMaterial({color:0xffffff,side:T.DoubleSide});
+  gm.onBeforeCompile=function(sh){sh.uniforms.uTime=uTime;sh.vertexShader='uniform float uTime;\n'+sh.vertexShader.replace('#include <begin_vertex>',
+    '#include <begin_vertex>\n#ifdef USE_INSTANCING\nfloat sw=sin(uTime*1.6+instanceMatrix[3][0]*0.35+instanceMatrix[3][2]*0.27)+0.5*sin(uTime*3.1+instanceMatrix[3][0]*1.3);\ntransformed.x+=sw*0.22*position.y;transformed.z+=sw*0.10*position.y;\n#endif')};
+  var gi=inst(bg,gm,blades,false);
+  for(i=0;i<bc.length;i++)gi.setColorAt(i,c.setRGB(0.10+bc[i]*0.12,0.19+bc[i]*0.15,0.05+bc[i]*0.04));gi.instanceColor.needsUpdate=true;
+})();
+var uTime={value:0};
+
+/* ---------- drifting motes ---------- */
+var motes=(function(){var n=COARSE?350:700,p=new Float32Array(n*3);for(var i=0;i<n;i++){p[i*3]=(rnd()-0.5)*120;p[i*3+1]=rnd()*14;p[i*3+2]=(rnd()-0.5)*120}
+  var g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(p,3));
+  var m=new T.Points(g,new T.PointsMaterial({color:0xffd9a0,size:0.11,transparent:true,opacity:0.7,blending:T.AdditiveBlending,depthWrite:false}));m.frustumCulled=false;scene.add(m);return m})();
+
+/* ---------- relics ---------- */
+var LORE=[
+ 'They raised the ring to count the seasons. Then the seasons stopped coming.',
+ 'A name was carved here. Rain took the letters and kept the stone.',
+ 'The river once ran through the gate. It left, and the gate stayed open for it.',
+ 'Someone lit this every night, long after anyone was left to see it.',
+ 'What we could not carry, we buried. What we could not bury, we left standing.'];
+var relics=[],found=0;
+(function(){var want=[[0.5,44],[1.9,66],[3.1,52],[4.2,84],[5.5,60]],geo=jitter(new T.CylinderGeometry(0.34,0.6,2.5,5,2),0.07),gem=new T.OctahedronGeometry(0.2,0);
+  want.forEach(function(w,i){var a=w[0],r=w[1],x,z,y,t=0;do{x=Math.cos(a)*r;z=Math.sin(a)*r;y=height(x,z);a+=0.13}while(y<WATER+1&&t++<50);
+    var s=new T.Mesh(geo,stone);s.position.set(x,y+1.1,z);s.rotation.set(0.06,i*1.3,-0.05);s.castShadow=true;scene.add(s);
+    var mat=new T.MeshBasicMaterial({color:0x2c5f58,fog:true}),g=new T.Mesh(gem,mat);g.position.set(x,y+3.0,z);scene.add(g);
+    var l=new T.PointLight(0x7fe3d0,0,16,2);l.position.set(x,y+3.0,z);scene.add(l);
+    relics.push({x:x,z:z,y:y+3.0,gem:g,mat:mat,light:l,found:false,i:i});colliders.push({x:x,z:z,r:0.9})})})();
+
+/* ---------- player ---------- */
+var pos=new T.Vector3(0,0,66),yaw=0,pitch=-0.02,eye=ground(0,66)+1.7,keys={},move={x:0,y:0},entered=false,walked=0;
+function tryMove(dx,dz){var nx=pos.x+dx,nz=pos.z+dz;
+  if(Math.hypot(nx,nz)>250)return;if(height(nx,nz)<WATER+0.35&&Math.hypot(nx,nz)>19)return;
+  for(var i=0;i<colliders.length;i++){var o=colliders[i],ex=nx-o.x,ez=nz-o.z,d=Math.hypot(ex,ez),r=o.r+0.4;if(d<r&&d>0.0001){nx=o.x+ex/d*r;nz=o.z+ez/d*r}}
+  pos.x=nx;pos.z=nz}
+window.addEventListener('keydown',function(e){keys[e.code]=true;if(entered&&/^Arrow|Space/.test(e.code))e.preventDefault()});
+window.addEventListener('keyup',function(e){keys[e.code]=false});
+window.addEventListener('blur',function(){keys={}});
+var cvs=$('gl'),ptrs={},stickEl=$('stick'),knob=stickEl.firstElementChild;
+cvs.addEventListener('pointerdown',function(e){if(!entered)return;try{cvs.setPointerCapture(e.pointerId)}catch(_){}
+  var st=e.pointerType==='touch'&&e.clientX<window.innerWidth*0.45;ptrs[e.pointerId]={x:e.clientX,y:e.clientY,ox:e.clientX,oy:e.clientY,stick:st};
+  if(st){stickEl.style.left=e.clientX+'px';stickEl.style.top=e.clientY+'px';stickEl.hidden=false;knob.style.transform=''}e.preventDefault()});
+cvs.addEventListener('pointermove',function(e){var p=ptrs[e.pointerId];if(!p)return;
+  if(p.stick){var dx=e.clientX-p.ox,dy=e.clientY-p.oy,l=Math.hypot(dx,dy),m=Math.min(l,48)/(l||1);move.x=dx*m/48;move.y=dy*m/48;knob.style.transform='translate('+dx*m+'px,'+dy*m+'px)'}
+  else{var k=e.pointerType==='touch'?0.0055:0.0034;yaw-=(e.clientX-p.x)*k;pitch=Math.max(-1.2,Math.min(1.2,pitch-(e.clientY-p.y)*k))}
+  p.x=e.clientX;p.y=e.clientY});
+function up(e){var p=ptrs[e.pointerId];if(p&&p.stick){move.x=move.y=0;stickEl.hidden=true}delete ptrs[e.pointerId]}
+cvs.addEventListener('pointerup',up);cvs.addEventListener('pointercancel',up);
+
+/* ---------- sound ---------- */
+var ac=null;
+function startSound(){try{ac=new (window.AudioContext||window.webkitAudioContext)();var n=ac.sampleRate*3,b=ac.createBuffer(1,n,ac.sampleRate),d=b.getChannelData(0),l=0;
+  for(var i=0;i<n;i++){l=l*0.985+(Math.random()*2-1)*0.015;d[i]=l*6}
+  var s=ac.createBufferSource();s.buffer=b;s.loop=true;var f=ac.createBiquadFilter();f.type='lowpass';f.frequency.value=520;var g=ac.createGain();g.gain.value=0.16;
+  var lfo=ac.createOscillator(),lg=ac.createGain();lfo.frequency.value=0.11;lg.gain.value=0.09;lfo.connect(lg);lg.connect(g.gain);lfo.start();
+  s.connect(f);f.connect(g);g.connect(ac.destination);s.start()}catch(e){ac=null}}
+function chime(i){if(!ac)return;[0,7,12].forEach(function(st,k){var o=ac.createOscillator(),g=ac.createGain();o.type='sine';o.frequency.value=330*Math.pow(2,(st+i*2)/12);
+  g.gain.setValueAtTime(0.0001,ac.currentTime+k*0.14);g.gain.linearRampToValueAtTime(0.12,ac.currentTime+k*0.14+0.03);g.gain.exponentialRampToValueAtTime(0.0001,ac.currentTime+k*0.14+2.4);
+  o.connect(g);g.connect(ac.destination);o.start(ac.currentTime+k*0.14);o.stop(ac.currentTime+k*0.14+2.5)})}
+
+/* ---------- hud ---------- */
+var toastT=null;
+function toast(s,ms){var t=$('toast');t.textContent=s;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('on')},ms||6500)}
+$('enter').onclick=function(){entered=true;$('intro').hidden=true;$('count').hidden=false;startSound();
+  var h=$('hint');h.textContent=COARSE?'Left thumb walks · right thumb looks':'Drag to look · W A S D to walk · Shift to run';h.hidden=false;
+  toast('Follow the old road through the gate.',5200)};
+
+/* ---------- loop ---------- */
+var clock=new T.Clock(),orbit=0;
+function frame(){requestAnimationFrame(frame);var dt=Math.min(0.05,clock.getDelta()),t=clock.elapsedTime;uTime.value=t;
+  if(entered){
+    var f=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0)-move.y,sd=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0)+move.x;
+    var l=Math.hypot(f,sd);if(l>1){f/=l;sd/=l;l=1}
+    if(l>0.02){var sp=(keys.ShiftLeft||keys.ShiftRight?11:6)*dt,sy=Math.sin(yaw),cy=Math.cos(yaw);
+      var dx=(-sy*f+cy*sd)*sp,dz=(-cy*f-sy*sd)*sp;tryMove(dx,0);tryMove(0,dz);walked+=l*sp;
+      if(walked>8&&!$('hint').hidden)$('hint').hidden=true}
+    var gy=ground(pos.x,pos.z)+1.7+Math.sin(walked*1.9)*0.045;eye+=(gy-eye)*Math.min(1,dt*9);
+    camera.position.set(pos.x,eye,pos.z);camera.rotation.set(pitch,yaw,0,'YXZ');
+    for(var i=0;i<relics.length;i++){var r=relics[i];
+      if(!r.found&&Math.hypot(pos.x-r.x,pos.z-r.z)<4.2){r.found=true;found++;r.mat.color.setHex(0xb6fff0);r.mat.fog=false;r.mat.needsUpdate=true;r.light.intensity=1.5;
+        $('count').textContent='Relics '+found+' / 5';chime(r.i);
+        toast(found<5?LORE[r.i]:LORE[r.i]+' The ring remembers you now. Go back to its heart.',found<5?7000:11000)}}
+  }else{orbit+=dt*0.045;var R=47;camera.position.set(Math.sin(orbit+0.35)*R,ground(0,40)+7.5,Math.cos(orbit+0.35)*R);camera.lookAt(0,7.5,0)}
+  for(i=0;i<relics.length;i++){var q=relics[i];q.gem.rotation.y=t*0.8+i;q.gem.position.y=q.y+Math.sin(t*1.3+i)*0.12}
+  var pulse=1+Math.sin(t*1.4)*0.12;orb.position.y=12+Math.sin(t*0.7)*0.35;orb.scale.setScalar(pulse*(1+found*0.14));orbL.position.y=orb.position.y;orbL.intensity=1.1+found*0.5;
+  var mp=motes.geometry.attributes.position;for(i=0;i<mp.count;i+=3){mp.setY(i,(mp.getY(i)+dt*0.25)%14)}mp.needsUpdate=true;
+  motes.position.set(Math.round(camera.position.x/40)*40,ground(0,0)-1,Math.round(camera.position.z/40)*40);motes.rotation.y=t*0.01;
+  sky.position.copy(camera.position);disc.position.copy(camera.position).addScaledVector(SUN,1100);disc.lookAt(camera.position);
+  renderer.render(scene,camera)}
+frame();
+})();
+</script>
+
+</body></html>
