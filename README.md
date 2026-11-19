@@ -1,9 +1,13 @@
-# The Forgotten World
+# The Forgotten World and The Salt Shore
 
-An imaginary valley you can walk around in 3D, in a web page.
-A ring of stone stands in the middle. Around it are a gate, a lake temple, a watchtower,
-an empty village, a circle of standing stones, a great arch on a hill and a broken aqueduct.
-Seven glowing relics are hidden among them; each one tells a line of the story.
+Two imaginary places you can walk around in 3D, in a web page. Both use the same small engine.
+
+- **The Forgotten World** (`index.html`): a misty valley at sunset. A ring of stone, a gate, a lake temple,
+  a watchtower, an empty village, standing stones, a great arch and a broken aqueduct.
+- **The Salt Shore** (`sea.html`): a hot, bright island. A big wrecked ship on the beach, a wooden pier,
+  a white village, a lighthouse, a fort with old guns, whale bones, and an idol on a tiny islet you wade to.
+
+Each world hides seven glowing relics; each relic tells a line of the story.
 
 ## Run it
 
@@ -15,19 +19,22 @@ three.js (r128) is loaded from cdnjs, so you need to be online.
 
 ## Controls
 
-- Desktop: drag to look, `W A S D` or arrow keys to walk, hold `Shift` to run.
+- Desktop: click the view once, then just move the mouse to look. `W A S D` or arrow keys walk, `Shift` runs, `Esc` frees the mouse.
+  If the browser will not lock the mouse, dragging still works.
 - Phone: left thumb walks, right thumb looks around.
 
 ## What is in here
 
 | File | What it does |
 | --- | --- |
-| `index.html` | The page, the words on screen and their styling. |
-| `js/core.js` | Noise, the map (where each landmark and path is), the height of the land. |
+| `index.html`, `sea.html` | One page per world: the words on screen and their styling. |
+| `js/core.js` | Noise and the height grid shared by both worlds. |
+| `js/valley.js` | The valley: its map, colours, story lines and every ruin. |
+| `js/sea.js` | The island: its map, colours, story lines, the ships, pier, lighthouse and the rest. |
 | `js/gfx.js` | The sky colour and haze maths that every shader shares; all textures. |
 | `js/world.js` | Sky dome, clouds, far mountains, sunlight and shadows, the ground, the stone material. |
-| `js/ruins.js` | Every ruin, stacked from single stone blocks. |
-| `js/flora.js` | Pine trees, bushes, ferns, and the grass that follows you. |
+| `js/ruins.js` | The building kit: walls, columns, arches and towers stacked from single blocks. |
+| `js/flora.js` | Pine and palm trees, bushes, ferns, and the grass that follows you. |
 | `js/extras.js` | Lake water with reflections, birds, falling leaves, dust, and the glow / sun-ray pass. |
 | `js/game.js` | Start-up, walking and collisions, relics, sound, the frame loop, automatic quality. |
 
@@ -50,4 +57,4 @@ The title font is Marcellus from Google Fonts (SIL Open Font Licence), with a sy
 
 ## Not tested
 
-It was checked in headless Chromium at desktop and phone sizes. It has not been run on a real phone.
+Both worlds were checked in headless Chromium at desktop and phone sizes. They have not been run on a real phone.

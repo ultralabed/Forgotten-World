@@ -52,6 +52,27 @@ function pineGeometry(seed, H) {
   g.setAttribute('position', new T.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(N, 3)); g.setAttribute('uv', new T.Float32BufferAttribute(U, 2)); g.setAttribute('aSway', new T.Float32BufferAttribute(W, 1)); g.setIndex(I);
   return g;
 }
+function palmGeometry(seed, H) {
+  var r = m.RNG(seed), P = [], N = [], U = [], W = [], I = [], n = 0, i, k;
+  function v(x, y, z, nx, ny, nz, u, vv, w) { P.push(x, y, z); var l = Math.hypot(nx, ny, nz) || 1; N.push(nx / l, ny / l, nz / l); U.push(u, vv); W.push(w); return n++; }
+  var sides = 9, segs = 8, lean = 0.12 + r() * 0.22, la = r() * 6.28, lx = Math.cos(la), lz = Math.sin(la);
+  function axis(t) { return [lx * lean * t * t * H, t * H - 0.3, lz * lean * t * t * H]; }
+  for (k = 0; k <= segs; k++) { var t = k / segs, c = axis(t), rr = (0.165 - 0.055 * t) * (1 + 0.5 * Math.exp(-t * 9)) * (H / 8 * 0.5 + 0.5);
+    for (i = 0; i <= sides; i++) { var a = i / sides * 6.2832; v(c[0] + Math.cos(a) * rr, c[1], c[2] + Math.sin(a) * rr, Math.cos(a), 0.1, Math.sin(a), 0.515 + (i / sides) * 0.47, 0.012 + t * 0.47, 0.72 + t * 0.2); } }
+  for (k = 0; k < segs; k++) for (i = 0; i < sides; i++) { var a0 = k * (sides + 1) + i, b0 = a0 + sides + 1; I.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1); }
+  var top = axis(1), fr = 15 + Math.floor(r() * 4), f;
+  for (f = 0; f < fr; f++) {
+    var az = f / fr * 6.2832 * 2.4 + r() * 0.4, e0 = 1.15 - (f / fr) * 1.5 + (r() - 0.5) * 0.25, L = (2.5 + r() * 1.1) * (H / 8 * 0.45 + 0.55), wd = 0.62 * L / 3, dx = Math.cos(az), dz = Math.sin(az), px = -dz, pz = dx, base = n, s, cx = top[0], cy = top[1] - 0.1, cz = top[2], S = 5;
+    for (s = 0; s <= S; s++) { var q = s / S, ang = e0 - q * (1.25 + (1 - e0) * 0.35), ca = Math.cos(ang), sa = Math.sin(ang), ww = wd * (0.35 + 0.65 * Math.sin(Math.PI * Math.min(1, q * 0.85 + 0.12)));
+      v(cx + px * ww, cy + 0.06, cz + pz * ww, dx * 0.4 + px * 0.3, 0.9, dz * 0.4 + pz * 0.3, 0.006 + q * 0.488, 0.008, 0.9 + q * 1.2);
+      v(cx - px * ww, cy + 0.06, cz - pz * ww, dx * 0.4 - px * 0.3, 0.9, dz * 0.4 - pz * 0.3, 0.006 + q * 0.488, 0.492, 0.9 + q * 1.2);
+      cx += dx * ca * L / S; cy += sa * L / S; cz += dz * ca * L / S; }
+    for (s = 0; s < S; s++) { var b = base + s * 2; I.push(b, b + 2, b + 1, b + 1, b + 2, b + 3); }
+  }
+  var g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(N, 3)); g.setAttribute('uv', new T.Float32BufferAttribute(U, 2)); g.setAttribute('aSway', new T.Float32BufferAttribute(W, 1)); g.setIndex(I);
+  return g;
+}
 function share(g, cx, cy, cz, rad) { var c = new T.BufferGeometry(); c.attributes = g.attributes; c.index = g.index; c.boundingSphere = new T.Sphere(new T.Vector3(cx, cy, cz), rad); return c; }
 
 FW.buildFlora = function (scene) {
@@ -61,18 +82,17 @@ FW.buildFlora = function (scene) {
     begin: '#include <begin_vertex>\n vShade = mix(0.42, 1.0, smoothstep(0.2, 1.0, aSway));\n#ifdef USE_INSTANCING\n float ph = instanceMatrix[3][0] * 0.31 + instanceMatrix[3][2] * 0.17;\n transformed.x += aSway * (sin(uTime * 1.1 + ph + position.y * 0.4) * 0.07 + sin(uTime * 2.7 + ph * 2.0 + position.x) * 0.025);\n transformed.z += aSway * sin(uTime * 0.9 + ph * 1.3 + position.y * 0.3) * 0.06;\n transformed.y += aSway * sin(uTime * 1.7 + ph + position.x * 1.3 + position.z) * 0.03;\n#endif'
   });
   var depthMat = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, map: atlas, alphaTest: 0.36, side: T.DoubleSide });
-  var variants = [pineGeometry(3, 11), pineGeometry(8, 13.5), pineGeometry(21, 9)], VH = [11, 13.5, 9];
+  var TC = FW.cfg.tree, palm = TC.kind === 'palm', variants = palm ? [palmGeometry(3, 8), palmGeometry(8, 10.5), palmGeometry(21, 6.5)] : [pineGeometry(3, 11), pineGeometry(8, 13.5), pineGeometry(21, 9)], VH = palm ? [8, 10.5, 6.5] : [11, 13.5, 9], TT = TC.tint || [0.80, 0.94, 0.74];
 
   /* choose places */
   var trees = [], tries = 0, a, r, x, z, y, s;
   function blocked(x, z, pad) { for (var q in SI) { var S = SI[q]; if (S.r && Math.hypot(x - S.x, z - S.z) < S.r + pad) return true; } return FW.pathDist(x, z) < 3.2; }
-  while (trees.length < Q.trees && tries++ < 30000) {
-    a = rnd() * 6.2832; r = 31 + Math.pow(rnd(), 0.72) * 285; x = Math.cos(a) * r; z = Math.sin(a) * r; y = FW.hAt(x, z);
-    if (y < WATER + 0.7 || y > 80 || FW.slopeAt(x, z) > 0.8 || blocked(x, z, 3)) continue;
-    var f = m.fbm(x * 0.016 + 50, z * 0.016 + 20, 3); if (f < 0.47 - m.sstep(200, 250, r) * 0.2 && rnd() > 0.035) continue;
-    var lx = x - 12, lz = z + 101, ux = 0.951, uz = -0.31, tq = m.clamp(lx * ux + lz * uz, 0, 97); if (Math.hypot(lx - ux * tq, lz - uz * tq) < 5) continue;   /* keep the aqueduct clear */
+  var want = Math.round(Q.trees * (TC.amount === undefined ? 1 : TC.amount)), pk;
+  while (trees.length < want && tries++ < 30000) {
+    pk = TC.pick(rnd); x = pk[0]; z = pk[1]; y = FW.hAt(x, z);
+    if (blocked(x, z, 3)) continue; s = TC.ok(x, z, y, FW.slopeAt(x, z), rnd); if (!s) continue;
     var ok = true; for (i = trees.length - 1; i >= 0 && i > trees.length - 60; i--) if (Math.hypot(trees[i].x - x, trees[i].z - z) < 2.4) { ok = false; break; } if (!ok) continue;
-    s = (0.72 + rnd() * 0.75) * (0.8 + m.sstep(0.47, 0.62, f) * 0.35); trees.push({ x: x, z: z, y: y, s: s, v: Math.floor(rnd() * 3), ry: rnd() * 6.28, c: 0.78 + rnd() * 0.42, w: rnd() });
+    trees.push({ x: x, z: z, y: y, s: s, v: Math.floor(rnd() * 3), ry: rnd() * 6.28, c: 0.78 + rnd() * 0.42, w: rnd() });
   }
   FW.trees = trees;
   /* spread into sky-view cells so whole groups can be skipped when off screen */
@@ -80,12 +100,14 @@ FW.buildFlora = function (scene) {
   var sx = -FW.SUN.x / Math.hypot(FW.SUN.x, FW.SUN.z), sz = -FW.SUN.z / Math.hypot(FW.SUN.x, FW.SUN.z);
   for (i = 0; i < trees.length; i++) { t = trees[i]; key = Math.floor((t.x + SIZE / 2) / CELL) + '_' + Math.floor((t.z + SIZE / 2) / CELL) + '_' + t.v; (cells[key] = cells[key] || []).push(t);
     FW.colliders.push({ x: t.x, z: t.z, r: 0.34 * t.s + 0.12 });
-    var hh = VH[t.v] * t.s; for (k = 0; k < 4; k++) FW.mask.stamp(t.x + sx * hh * (0.25 + k * 0.5), t.z + sz * hh * (0.25 + k * 0.5), 1.6 * t.s + (k < 2 ? 1.4 : 0.5) * t.s, 2, 235, 0.75);
-    FW.mask.stamp(t.x, t.z, 1.5 * t.s, 0, 40, 0.8); }
+    var hh = VH[t.v] * t.s; var sl2 = hh * FW.SUN.y > 0 ? Math.min(2, Math.hypot(FW.SUN.x, FW.SUN.z) / FW.SUN.y) : 2;
+    if (palm) FW.mask.stamp(t.x + sx * hh * sl2, t.z + sz * hh * sl2, 2.6 * t.s, 2, 200, 0.8);
+    else { for (k = 0; k < 4; k++) FW.mask.stamp(t.x + sx * hh * (0.25 + k * 0.5), t.z + sz * hh * (0.25 + k * 0.5), 1.6 * t.s + (k < 2 ? 1.4 : 0.5) * t.s, 2, 235, 0.75);
+      FW.mask.stamp(t.x, t.z, 1.5 * t.s, 0, 40, 0.8); } }
   for (key in cells) { var list = cells[key], kk = key.split('_'), cx = (+kk[0] + 0.5) * CELL - SIZE / 2, cz = (+kk[1] + 0.5) * CELL - SIZE / 2, vi = +kk[2];
     var im = new T.InstancedMesh(share(variants[vi], cx, 12, cz, CELL * 0.75 + 22), treeMat, list.length);
     for (i = 0; i < list.length; i++) { t = list[i]; e.set((rnd() - 0.5) * 0.07, t.ry, (rnd() - 0.5) * 0.07); q4.setFromEuler(e); p3.set(t.x, t.y, t.z); s3.set(t.s, t.s * (0.92 + t.w * 0.2), t.s); im.setMatrixAt(i, mat4.compose(p3, q4, s3));
-      im.setColorAt(i, col.setRGB(0.80 * t.c + t.w * 0.14, 0.94 * t.c, 0.74 * t.c)); }
+      im.setColorAt(i, col.setRGB(TT[0] * t.c + t.w * 0.14, TT[1] * t.c, TT[2] * t.c)); }
     im.instanceColor.needsUpdate = true; im.castShadow = im.receiveShadow = true; im.customDepthMaterial = depthMat; scene.add(im); FW.stats.treeTris += variants[vi].index.count / 3 * list.length; }
 
   /* ---------- bushes and ferns ---------- */
@@ -101,14 +123,14 @@ FW.buildFlora = function (scene) {
   var bushMat = leafy(new T.MeshLambertMaterial({ map: atlas, alphaTest: 0.4, side: T.DoubleSide }), { vpars: 'attribute float aSway;\n', glow: 0.5,
     begin: '#include <begin_vertex>\n#ifdef USE_INSTANCING\n transformed.x += aSway * sin(uTime * 1.6 + instanceMatrix[3][0] * 0.5 + instanceMatrix[3][2] * 0.4) * 0.05;\n#endif' });
   function scatter(geo, list, shadow) { var im = new T.InstancedMesh(geo, bushMat, list.length), j, o;
-    for (j = 0; j < list.length; j++) { o = list[j]; e.set(0, rnd() * 6.28, 0); q4.setFromEuler(e); p3.set(o.x, o.y, o.z); s3.set(o.s, o.s * (0.8 + rnd() * 0.4), o.s); im.setMatrixAt(j, mat4.compose(p3, q4, s3)); var c = 0.75 + rnd() * 0.5; im.setColorAt(j, col.setRGB(c * (0.9 + rnd() * 0.2), c, c * 0.85)); }
+    for (j = 0; j < list.length; j++) { o = list[j]; e.set(0, rnd() * 6.28, 0); q4.setFromEuler(e); p3.set(o.x, o.y, o.z); s3.set(o.s, o.s * (0.8 + rnd() * 0.4), o.s); im.setMatrixAt(j, mat4.compose(p3, q4, s3)); var c = 0.75 + rnd() * 0.5, BT = FW.cfg.bushTint || [1, 1, 0.85]; im.setColorAt(j, col.setRGB(c * (0.9 + rnd() * 0.2) * BT[0], c * BT[1], c * BT[2])); }
     im.instanceColor.needsUpdate = true; im.frustumCulled = false; im.receiveShadow = true; im.castShadow = !!shadow; if (shadow) im.customDepthMaterial = depthMat; scene.add(im); }
   var bushes = [], ferns = [];
   tries = 0; while (bushes.length < Q.bushes && tries++ < 20000) { a = rnd() * 6.2832; r = 21 + Math.pow(rnd(), 0.8) * 235; x = Math.cos(a) * r; z = Math.sin(a) * r; y = FW.hAt(x, z);
-    if (y < WATER + 0.4 || y > 40 || FW.slopeAt(x, z) > 0.55 || FW.pathDist(x, z) < 2.2 || FW.mask.grassAt(x, z) < 0.2) continue; var f2 = m.fbm(x * 0.016 + 50, z * 0.016 + 20, 3); if (Math.abs(f2 - 0.46) > 0.07 && rnd() > 0.12) continue;
-    if (Math.hypot(x, z - 66) < 7) continue; bushes.push({ x: x, y: y, z: z, s: 0.55 + rnd() * 0.75 }); }
-  for (i = 0; i < trees.length && ferns.length < Q.ferns; i++) { t = trees[i]; for (k = 0; k < 2; k++) { a = rnd() * 6.28; r = 0.8 + rnd() * 3.2; x = t.x + Math.cos(a) * r; z = t.z + Math.sin(a) * r; if (FW.pathDist(x, z) < 1.8) continue; ferns.push({ x: x, y: FW.hAt(x, z), z: z, s: 0.6 + rnd() * 0.7 }); } }
-  scatter(cards(3, 0, 0.505, 1.9, 1.5, 0, false), bushes, true); scatter(cards(6, 0.505, 0.505, 0.75, 1.25, 0.95, true), ferns, false);
+    if (FW.slopeAt(x, z) > 0.55 || FW.pathDist(x, z) < 2.2 || FW.mask.grassAt(x, z) < 0.2 || !FW.cfg.bushOk(x, z, y, rnd)) continue;
+    bushes.push({ x: x, y: y, z: z, s: 0.55 + rnd() * 0.75 }); }
+  for (i = 0; i < trees.length && ferns.length < Q.ferns * (FW.cfg.ferns === undefined ? 1 : FW.cfg.ferns); i++) { t = trees[i]; for (k = 0; k < 2; k++) { a = rnd() * 6.28; r = 0.8 + rnd() * 3.2; x = t.x + Math.cos(a) * r; z = t.z + Math.sin(a) * r; if (FW.pathDist(x, z) < 1.8) continue; ferns.push({ x: x, y: FW.hAt(x, z), z: z, s: 0.6 + rnd() * 0.7 }); } }
+  scatter(cards(3, 0, 0.505, 1.9, 1.5, 0, false), bushes, true); if (ferns.length) scatter(cards(6, 0.505, 0.505, 0.75, 1.25, 0.95, true), ferns, false);
 
   /* ---------- grass ---------- */
   var L = Q.grassL, nT = Q.tufts, quads = Q.coarse ? 2 : 3, GP = [], GN = [], GU = [], GI = [];
@@ -134,7 +156,7 @@ FW.buildFlora = function (scene) {
       'vec3 transformed = vec3(gw.x + gp.x * gs, fwHeight(gw) - 0.09 * gs + position.y * gh, gw.y + gp.y * gs);',
       'transformed.xz += (vec2(gwv * 1.1, gwv * 0.7) + sin(uTime * 2.3 + gw.x * 0.9 + gw.y * 0.7) * 0.05) * position.y * gs;',
       'float gm = texture2D(uNoise, gw * 0.0057).r;',
-      'vTint = mix(vec3(0.62, 0.80, 0.62), vec3(1.30, 1.16, 0.80), smoothstep(0.3, 0.7, gm)) * (0.82 + fract(aOff.z * 11.3) * 0.36); vTint = mix(vTint, vec3(1.0), flower * 0.5);',
+      'vTint = mix(' + FW.pal.tintA + ', ' + FW.pal.tintB + ', smoothstep(0.3, 0.7, gm)) * (0.82 + fract(aOff.z * 11.3) * 0.36); vTint = mix(vTint, vec3(1.0), flower * 0.5);',
       'vRoot = 1.0 - position.y; vUv.x += flower * 0.5;'
     ].join('\n'),
     fpars: 'varying vec3 vTint; varying float vRoot;\n',

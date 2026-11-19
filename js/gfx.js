@@ -3,7 +3,17 @@
 'use strict';
 var FW = window.FW, T = THREE, m = FW.m;
 
-FW.SUN = new T.Vector3(-0.55, 0.335, -0.79).normalize();
+var SK = FW.cfg.sky || {}, PAL = FW.pal = FW.cfg.pal || {};
+function def(o, k, v) { if (o[k] === undefined) o[k] = v; return o[k]; }
+function c3(a) { return 'vec3(' + a[0].toFixed(4) + ',' + a[1].toFixed(4) + ',' + a[2].toFixed(4) + ')'; }
+def(SK, 'sun', [-0.55, 0.335, -0.79]); def(SK, 'zen', [0.20, 0.29, 0.47]); def(SK, 'horFar', [0.70, 0.65, 0.69]); def(SK, 'horSun', [0.98, 0.76, 0.54]);
+def(SK, 'glowA', [1.0, 0.56, 0.24]); def(SK, 'glowAk', [0.16, 0.34]); def(SK, 'glowB', [1.0, 0.80, 0.52]); def(SK, 'glowBk', 0.30);
+def(SK, 'cov', [0.43, 0.62]); def(SK, 'cloudShade', [0.46, 0.41, 0.50]); def(SK, 'cloudLit', [1.0, 0.83, 0.64]); def(SK, 'cloudRim', 0.45);
+def(SK, 'fogBase', 0.0021); def(SK, 'fogHeight', 0.0120); def(SK, 'fogGlow', 0.5);
+def(PAL, 'grassBase', [0.165, 0.265, 0.085]); def(PAL, 'dirt', [0.37, 0.30, 0.21]); def(PAL, 'pebble', 1); def(PAL, 'rockTint', [1, 1, 1]); def(PAL, 'stoneTint', [1, 1, 1]);
+def(PAL, 'tintA', 'vec3(0.62, 0.80, 0.62)'); def(PAL, 'tintB', 'vec3(1.30, 1.16, 0.80)'); def(PAL, 'shoreTop', 1.3); def(PAL, 'bare', 0.55);
+def(PAL, 'tuft', { hue: 66, hueR: 34, sat: 33, lt: 17, ltR: 13, fill: [70, 84, 42] });
+FW.SUN = new T.Vector3(SK.sun[0], SK.sun[1], SK.sun[2]).normalize();
 function v3(v) { return 'vec3(' + v.x.toFixed(5) + ',' + v.y.toFixed(5) + ',' + v.z.toFixed(5) + ')'; }
 
 /* One sky-colour function. The sky dome, the fog on every object and the water reflection all call it,
@@ -14,12 +24,12 @@ FW.GLSL_ATMO = [
   '  float y = max(d.y, 0.0);',
   '  float mu = max(dot(d, FW_SUN), 0.0);',
   '  float flat_ = max(dot(normalize(vec3(d.x, 0.0, d.z) + 1e-5), normalize(vec3(FW_SUN.x, 0.0, FW_SUN.z))), -1.0);',
-  '  vec3 zen = vec3(0.20, 0.29, 0.47);',
-  '  vec3 hor = mix(vec3(0.70, 0.65, 0.69), vec3(0.98, 0.76, 0.54), smoothstep(-0.6, 1.0, flat_));',
+  '  vec3 zen = ' + c3(SK.zen) + ';',
+  '  vec3 hor = mix(' + c3(SK.horFar) + ', ' + c3(SK.horSun) + ', smoothstep(-0.6, 1.0, flat_));',
   '  vec3 c = mix(hor, zen, 1.0 - exp(-y * 3.2));',
   '  float low = exp(-y * 7.0);',
-  '  c += glow * vec3(1.0, 0.56, 0.24) * pow(mu, 6.0) * (0.16 + 0.34 * low);',
-  '  c += glow * vec3(1.0, 0.80, 0.52) * pow(mu, 64.0) * 0.30;',
+  '  c += glow * ' + c3(SK.glowA) + ' * pow(mu, 6.0) * (' + SK.glowAk[0].toFixed(3) + ' + ' + SK.glowAk[1].toFixed(3) + ' * low);',
+  '  c += glow * ' + c3(SK.glowB) + ' * pow(mu, 64.0) * ' + SK.glowBk.toFixed(3) + ';',
   '  return c;',
   '}',
   'vec3 fwAtmo(vec3 d){ return fwAtmoG(d, 1.0); }'
@@ -33,12 +43,12 @@ FW.GLSL_CLOUD = [
   '  if (d.y > 0.004) {',
   '    vec2 p = d.xz / (d.y + 0.16) * 0.085 + uTime * vec2(0.0016, 0.0007);',
   '    float n = fwCloudN(p);',
-  '    float cov = smoothstep(0.43, 0.62, n);',
+  '    float cov = smoothstep(' + SK.cov[0].toFixed(3) + ', ' + SK.cov[1].toFixed(3) + ', n);',
   '    float n2 = fwCloudN(p + normalize(FW_SUN.xz) * 0.022);',
   '    float lit = clamp((n - n2) * 5.0 + 0.45, 0.0, 1.0);',
   '    float mu = max(dot(d, FW_SUN), 0.0);',
-  '    vec3 cl = mix(vec3(0.46, 0.41, 0.50), vec3(1.0, 0.83, 0.64), lit);',
-  '    cl += vec3(1.0, 0.72, 0.42) * pow(mu, 10.0) * 0.45 * (1.0 - cov * 0.6);',
+  '    vec3 cl = mix(' + c3(SK.cloudShade) + ', ' + c3(SK.cloudLit) + ', lit);',
+  '    cl += vec3(1.0, 0.72, 0.42) * pow(mu, 10.0) * ' + SK.cloudRim.toFixed(3) + ' * (1.0 - cov * 0.6);',
   '    cl = mix(fwAtmo(vec3(d.x, 0.0, d.z)), cl, smoothstep(0.0, 0.22, d.y));',
   '    c = mix(c, cl, cov * smoothstep(0.0, 0.06, d.y) * 0.92);',
   '  }',
@@ -67,9 +77,9 @@ FW.patchFog = function () {
     '  float camH = max(camY - (' + FW.WATER.toFixed(1) + '), -10.0);',
     '  float t = 0.055 * fd.y * dist;',
     '  float integ = abs(t) > 0.002 ? (1.0 - exp(-t)) / t : 1.0;',
-    '  float od = dist * (0.0021 + 0.0120 * exp(-0.055 * camH) * integ) * (fogDensity * 100.0);',
+    '  float od = dist * (' + SK.fogBase.toFixed(5) + ' + ' + SK.fogHeight.toFixed(5) + ' * exp(-0.055 * camH) * integ) * (fogDensity * 100.0);',
     '  float f = 1.0 - exp(-od);',
-    '  vec3 fc = fwAtmoG(normalize(vec3(fd.x, abs(fd.y) * 0.25 + 0.03, fd.z)), 0.5) * 0.96;',
+    '  vec3 fc = fwAtmoG(normalize(vec3(fd.x, abs(fd.y) * 0.25 + 0.03, fd.z)), ' + SK.fogGlow.toFixed(2) + ') * 0.96;',
     '  return mix(col, fc, f);',
     '}',
     '#endif'
@@ -114,7 +124,7 @@ FW.makeTextures = function () {
     var a = m.fbmP(u * 6, v * 6, 6, 4), b = m.fbmP(u * 40 + 3, v * 40 + 7, 40, 2), s = m.vnP(u * 90, v * 24, 90) * m.vnP(u * 20 + 4, v * 70, 20);
     var dry = m.sstep(0.55, 0.75, m.fbmP(u * 3 + 8, v * 3 + 2, 3, 3));
     var g = 0.75 + 0.5 * b + 0.25 * s;
-    return [(0.165 + 0.08 * a + 0.09 * dry) * g, (0.265 + 0.10 * a + 0.04 * dry) * g, (0.085 + 0.03 * a) * g, b * 0.6 + s * 0.4];
+    return [(PAL.grassBase[0] + 0.08 * a + 0.09 * dry) * g, (PAL.grassBase[1] + 0.10 * a + 0.04 * dry) * g, (PAL.grassBase[2] + 0.03 * a) * g, b * 0.6 + s * 0.4];
   }, 2.2);
   /* natural rock: layered, cracked */
   X.rock = surface(256, function (u, v) {
@@ -122,7 +132,7 @@ FW.makeTextures = function () {
     var crack = m.sstep(0.0, 0.05, Math.abs(m.fbmP(u * 7 + 11, v * 7 + 70, 7, 4) - 0.5));
     var h = (r * 0.55 + strata * 0.25 + f * 0.2) * (0.35 + 0.65 * crack), b = 0.30 + h * 0.52;
     var warm = m.fbmP(u * 4 + 5, v * 4 + 1, 4, 3);
-    return [b * (0.50 + 0.10 * warm), b * (0.47 + 0.06 * warm), b * (0.43 + 0.01 * warm), h];
+    return [b * (0.50 + 0.10 * warm) * PAL.rockTint[0], b * (0.47 + 0.06 * warm) * PAL.rockTint[1], b * (0.43 + 0.01 * warm) * PAL.rockTint[2], h];
   }, 4.5);
   /* worked stone for the ruins: pale, pitted, stained */
   X.stone = surface(512, function (u, v) {
@@ -134,18 +144,24 @@ FW.makeTextures = function () {
     var b = 0.50 + h * 0.62, stain = m.sstep(0.50, 0.72, big), lichen = m.sstep(0.66, 0.72, m.fbmP(u * 12 + 50, v * 12 + 20, 12, 4));
     var r = b * (0.63 - stain * 0.10), gg = b * (0.60 - stain * 0.085), bb = b * (0.54 - stain * 0.09);
     r = m.mix(r, 0.74, lichen * 0.55); gg = m.mix(gg, 0.72, lichen * 0.55); bb = m.mix(bb, 0.52, lichen * 0.55);
-    return [r, gg, bb, h];
+    return [r * PAL.stoneTint[0], gg * PAL.stoneTint[1], bb * PAL.stoneTint[2], h];
   }, 5.5);
   /* path dirt with pebbles */
   X.dirt = surface(256, function (u, v) {
-    var f = m.fbmP(u * 8, v * 8, 8, 4), g = m.fbmP(u * 50 + 2, v * 50 + 6, 50, 2), peb = m.sstep(0.66, 0.74, m.fbmP(u * 22 + 13, v * 22 + 8, 22, 2));
+    var f = m.fbmP(u * 8, v * 8, 8, 4), g = m.fbmP(u * 50 + 2, v * 50 + 6, 50, 2), peb = PAL.pebble * m.sstep(0.66, 0.74, m.fbmP(u * 22 + 13, v * 22 + 8, 22, 2));
     var b = 0.72 + f * 0.4 + g * 0.2;
-    return [m.mix(0.37 * b, 0.55, peb), m.mix(0.30 * b, 0.52, peb), m.mix(0.21 * b, 0.47, peb), f * 0.5 + g * 0.2 + peb * 0.5];
+    return [m.mix(PAL.dirt[0] * b, 0.55, peb), m.mix(PAL.dirt[1] * b, 0.52, peb), m.mix(PAL.dirt[2] * b, 0.47, peb), f * 0.5 + g * 0.2 + peb * 0.5];
   }, 3.5);
   /* small waves */
   X.wave = surface(256, function (u, v) { var h = m.fbmP(u * 6, v * 6, 6, 4) * 0.7 + ridged(u, v, 9, 3) * 0.3; return [h, h, h, h]; }, 3.0).normal;
 
-  X.foliage = foliageAtlas();
+  /* weathered timber */
+  X.wood = surface(256, function (u, v) {
+    var st = m.vnP(u * 5 + 3, v * 70, 70) * 0.6 + m.vnP(u * 11, v * 150 + 9, 150) * 0.4, f = m.fbmP(u * 6 + 2, v * 6 + 5, 6, 4), knot = m.sstep(0.70, 0.78, m.fbmP(u * 9 + 40, v * 9 + 12, 9, 3));
+    var h = st * 0.7 + f * 0.3 - knot * 0.3, b = 0.42 + h * 0.5;
+    return [b * (0.66 + f * 0.1), b * (0.60 + f * 0.06), b * 0.52, h];
+  }, 4.0);
+  X.foliage = foliageAtlas((FW.cfg.tree || {}).kind || 'pine');
   X.tuft = grassTufts();
 };
 
@@ -158,7 +174,7 @@ function finish(cv, fill, srgbTex) {
   t2.magFilter = T.LinearFilter; t2.minFilter = T.LinearMipmapLinearFilter; t2.generateMipmaps = true; t2.anisotropy = 4;
   t2.encoding = T.sRGBEncoding; t2.needsUpdate = true; return t2;
 }
-function foliageAtlas() {
+function foliageAtlas(kind) {
   var cv = document.createElement('canvas'); cv.width = cv.height = 512; var x = cv.getContext('2d'), r = m.RNG(31), i, j;
   x.lineCap = 'round';
   /* [0,0] pine branch, base at the left edge */
@@ -169,6 +185,17 @@ function foliageAtlas() {
         x.strokeStyle = 'hsl(' + (92 + r() * 40) + ',' + (20 + r() * 18) + '%,' + (9 + r() * 14) + '%)'; x.lineWidth = 1.2 + r() * 0.9;
         x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); x.stroke(); } }
   }
+  if (kind === 'palm') {
+    /* [0,0] palm frond: a rib with thin leaflets on both sides; [1,0] ringed trunk */
+    for (i = 0; i < 46; i++) { var pt = 0.04 + i / 46 * 0.95, px0 = pt * 248, ll = 22 + 86 * Math.pow(Math.sin(Math.PI * Math.min(1, pt * 0.8 + 0.14)), 0.7);
+      for (j = -1; j <= 1; j += 2) { var pa = j * (1.12 - pt * 0.55) + (r() - 0.5) * 0.12, l2 = ll * (0.8 + r() * 0.3), tx = Math.min(254, px0 + Math.cos(pa) * l2), ty = 128 + Math.sin(pa) * l2 + j * l2 * 0.12, nx = -Math.sin(pa) * 3.4, ny = Math.cos(pa) * 3.4;
+        x.fillStyle = 'hsl(' + (74 + r() * 26) + ',' + (34 + r() * 16) + '%,' + (17 + r() * 15) + '%)'; x.beginPath(); x.moveTo(px0 - nx, 128 - ny); x.lineTo(tx, ty); x.lineTo(px0 + nx + 5, 128 + ny); x.closePath(); x.fill(); } }
+    x.strokeStyle = '#6a6b34'; x.lineWidth = 3.5; x.beginPath(); x.moveTo(0, 128); x.lineTo(250, 128); x.stroke();
+    x.fillStyle = '#75654f'; x.fillRect(256, 0, 256, 256);
+    for (i = 0; i < 44; i++) { var by = i * 6 + r() * 3; x.strokeStyle = 'rgba(40,30,22,' + (0.16 + r() * 0.2) + ')'; x.lineWidth = 1.2 + r() * 1.6; x.beginPath(); x.moveTo(256, by); x.bezierCurveTo(340, by + 5, 430, by - 5, 512, by + (r() - 0.5) * 3); x.stroke();
+      x.strokeStyle = 'rgba(170,150,120,0.18)'; x.lineWidth = 1; x.beginPath(); x.moveTo(256, by + 3); x.lineTo(512, by + 3); x.stroke(); }
+    for (i = 0; i < 200; i++) { x.strokeStyle = 'rgba(30,22,16,' + (0.1 + r() * 0.2) + ')'; x.lineWidth = 1; var qx = 258 + r() * 250, qy = r() * 250; x.beginPath(); x.moveTo(qx, qy); x.lineTo(qx + (r() - 0.5) * 3, qy + 5 + r() * 8); x.stroke(); }
+  } else {
   x.strokeStyle = '#2b2015'; x.lineWidth = 3; x.beginPath(); x.moveTo(0, 128); x.lineTo(246, 128); x.stroke();
   for (i = 0; i < 15; i++) { var t = 0.06 + i / 15 * 0.9, bx = t * 246, side = i % 2 ? 1 : -1, bl = (1 - t) * 104 + 14, ang = side * (0.62 + r() * 0.25);
     var ex = Math.min(250, bx + Math.cos(ang) * bl), ey = 128 + Math.sin(ang) * bl;
@@ -180,6 +207,7 @@ function foliageAtlas() {
   for (i = 0; i < 520; i++) { var px = 256 + r() * 256, py = r() * 256, l = 14 + r() * 60;
     x.strokeStyle = r() < 0.5 ? 'rgba(20,14,9,' + (0.25 + r() * 0.4) + ')' : 'rgba(96,86,74,' + (0.15 + r() * 0.3) + ')'; x.lineWidth = 1 + r() * 3;
     x.beginPath(); x.moveTo(px, py); x.quadraticCurveTo(px + (r() - 0.5) * 9, py + l / 2, Math.min(511, Math.max(257, px + (r() - 0.5) * 7)), py + l); x.stroke(); }
+  }
   /* [0,1] round-leaf bush clump */
   x.save(); x.beginPath(); x.rect(0, 256, 256, 256); x.clip();
   var lobes = [[78, 420, 62], [132, 372, 70], [186, 414, 60], [108, 452, 52], [160, 458, 50], [128, 316, 40], [60, 470, 34], [204, 468, 36]];
@@ -195,7 +223,7 @@ function foliageAtlas() {
       x.fillStyle = 'hsl(' + (86 + r() * 26) + ',' + (36 + r() * 16) + '%,' + (14 + r() * 13) + '%)';
       x.beginPath(); x.moveTo(0, 0); x.quadraticCurveTo(w * 0.5, -7, w, 0); x.quadraticCurveTo(w * 0.5, 7, 0, 0); x.fill(); x.restore(); } }
   x.restore();
-  return finish(cv, function (px, py) { return px < 256 && py < 256 ? [26, 36, 22] : px >= 256 && py < 256 ? [43, 35, 29] : [34, 50, 22]; });
+  return finish(cv, function (px, py) { return px < 256 && py < 256 ? (kind === 'palm' ? [58, 70, 30] : [26, 36, 22]) : px >= 256 && py < 256 ? (kind === 'palm' ? [117, 101, 79] : [43, 35, 29]) : [34, 50, 22]; });
 }
 function grassTufts() {
   var cv = document.createElement('canvas'); cv.width = 512; cv.height = 256; var x = cv.getContext('2d'), r = m.RNG(77), q, i;
@@ -205,8 +233,8 @@ function grassTufts() {
     x.save(); x.beginPath(); x.rect(ox + 2, 0, 252, 256); x.clip();
     for (i = 0; i < 96; i++) {
       var bx = ox + 128 + (r() - 0.5) * 120, lean = (bx - ox - 128) / 75 * 0.5 + (r() - 0.5) * 0.9, hgt = 110 + r() * 138, tx = bx + lean * hgt * 0.55, ty = 256 - hgt;
-      var g = x.createLinearGradient(0, 256, 0, ty), hue = 66 + r() * 34, lt = 17 + r() * 13;
-      g.addColorStop(0, 'hsl(' + (hue + 14) + ',30%,' + (lt * 0.45) + '%)'); g.addColorStop(0.55, 'hsl(' + hue + ',33%,' + lt + '%)'); g.addColorStop(1, 'hsl(' + (hue - 12) + ',36%,' + (lt + 12) + '%)');
+      var g = x.createLinearGradient(0, 256, 0, ty), TU = PAL.tuft, hue = TU.hue + r() * TU.hueR, lt = TU.lt + r() * TU.ltR;
+      g.addColorStop(0, 'hsl(' + (hue + 14) + ',' + (TU.sat - 3) + '%,' + (lt * 0.45) + '%)'); g.addColorStop(0.55, 'hsl(' + hue + ',' + TU.sat + '%,' + lt + '%)'); g.addColorStop(1, 'hsl(' + (hue - 12) + ',' + (TU.sat + 3) + '%,' + (lt + 12) + '%)');
       x.fillStyle = g; var w = 2.0 + r() * 2.6, cxp = bx + lean * hgt * 0.12, cyp = 256 - hgt * 0.6;
       x.beginPath(); x.moveTo(bx - w, 258); x.quadraticCurveTo(cxp - w * 0.6, cyp, tx, ty); x.quadraticCurveTo(cxp + w * 0.7, cyp, bx + w, 258); x.closePath(); x.fill();
       if (hgt > 185) tips.push([tx, ty]);
@@ -217,7 +245,7 @@ function grassTufts() {
       x.fillStyle = '#e0a52c'; x.beginPath(); x.arc(p[0], p[1] + 5, 2.4, 0, 6.283); x.fill(); });
     x.restore();
   }
-  return finish(cv, function () { return [70, 84, 42]; });
+  return finish(cv, function () { return PAL.tuft.fill; });
 }
 FW.util = { dataTex: dataTex };
 })();
