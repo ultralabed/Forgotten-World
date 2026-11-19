@@ -5,8 +5,7 @@ var FW = window.FW, T = THREE, m = FW.m, WATER = FW.WATER, SIZE = FW.SIZE, GRID 
 
 FW.uTime = { value: 0 };
 FW.colliders = [];
-/* the height you stand at: paved ring floor in the middle, the land everywhere else */
-FW.groundY = function (x, z) { var d = Math.hypot(x, z); if (d < 17.4) return 2.5; if (d < 19.4) return 2.25; return FW.hAt(x, z); };
+FW.groundY = function (x, z) { return FW.cfg.groundY ? FW.cfg.groundY(x, z) : FW.hAt(x, z); };
 
 /* ---------- mask: where grass grows, where paths run, where trees shade the ground ---------- */
 var MN = 1024, mask = new Uint8Array(MN * MN * 4);
@@ -26,10 +25,9 @@ function buildMask() {
     x = ((i + 0.5) / MN - 0.5) * SIZE; z = ((j + 0.5) / MN - 0.5) * SIZE; d = Math.hypot(x, z); k = (j * MN + i) * 4;
     if (d > 300) { mask[k] = 0; mask[k + 1] = 0; mask[k + 2] = 0; mask[k + 3] = 255; continue; }
     h = FW.hAt(x, z); sl = FW.slopeAt(x, z);
-    g = (1 - m.sstep(0.42, 0.62, sl)) * m.sstep(WATER + 0.15, WATER + 0.7, h) * (1 - m.sstep(40, 60, h));
+    g = FW.cfg.grassRule(x, z, h, sl, d);
     pd = FW.pathDist(x, z) + (m.vn(x * 0.35, z * 0.35) - 0.5) * 1.6; p = 1 - m.sstep(0.9, 2.3, pd);
-    g *= m.sstep(1.3, 2.9, pd); if (d < 19.8) g = 0;
-    g *= 0.55 + 0.45 * m.sstep(0.3, 0.55, m.fbm(x * 0.03 + 3, z * 0.03 + 8, 3));       /* thinner meadow in places */
+    g *= m.sstep(1.3, 2.9, pd);
     mask[k] = 255 * g; mask[k + 1] = 255 * p; mask[k + 2] = 0; mask[k + 3] = 255;
   }
 }
@@ -63,6 +61,7 @@ function buildSky(scene) {
   });
   var sky = new T.Mesh(new T.SphereGeometry(900, 32, 16), mat); sky.frustumCulled = false; sky.renderOrder = -10; scene.add(sky); FW.sky = sky;
 
+  if (FW.cfg.mountains === false) return;
   /* far mountains: two jagged rings that the fog turns into pale layers */
   var r = m.RNG(5), ring, k, i, pos, idx, geo;
   for (ring = 0; ring < 2; ring++) {
@@ -76,11 +75,12 @@ function buildSky(scene) {
 
 /* ---------- light ---------- */
 function buildLight(scene) {
-  var sun = FW.sunLight = new T.DirectionalLight(0xffc48a, 2.75); sun.castShadow = true;
+  var L = FW.cfg.light || {};
+  var sun = FW.sunLight = new T.DirectionalLight(L.sun || 0xffc48a, L.sunI || 2.75); sun.castShadow = true;
   var s = FW.Q.shadow; sun.shadow.mapSize.set(s, s);
   var sc = sun.shadow.camera, R = FW.Q.shadowR; sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 20; sc.far = 520; sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.06;
   scene.add(sun); scene.add(sun.target);
-  scene.add(new T.HemisphereLight(0x9bb9dc, 0x4a3d2a, 0.72));
+  scene.add(new T.HemisphereLight(L.sky || 0x9bb9dc, L.ground || 0x4a3d2a, L.hemiI || 0.72));
   FW.shadowCentre = new T.Vector3(1e9, 0, 0);
 }
 /* the shadow map only covers the land near you; it is redrawn when you have walked a little */
@@ -108,15 +108,15 @@ function buildTerrain(scene) {
         'vec2 xz = vWP.xz; vec4 msk = texture2D(uMask, xz / ' + SIZE.toFixed(1) + ' + 0.5);',
         'float macro = texture2D(uNoise, xz * 0.0057).r; float macro2 = texture2D(uNoise, xz * 0.027 + 0.4).g;',
         'vec3 gcol = mix(texture2D(uGrass, xz * 0.29).rgb, texture2D(uGrass, xz * 0.041).rgb, 0.5); gcol *= gcol;',
-        'gcol *= mix(vec3(0.62, 0.80, 0.62), vec3(1.30, 1.16, 0.80), smoothstep(0.3, 0.7, macro));',
+        'gcol *= mix(' + FW.pal.tintA + ', ' + FW.pal.tintB + ', smoothstep(0.3, 0.7, macro));',
         'vec2 ruv = xz * 0.105 + vec2(0.0, vWP.y * 0.105); vec3 rcol = texture2D(uRock, ruv).rgb; rcol *= rcol; rcol *= mix(vec3(0.7), vec3(1.2, 1.14, 1.04), texture2D(uRock, xz * 0.013).a) * mix(vec3(0.8), vec3(1.1), macro2);',
         'vec3 dcol = texture2D(uDirt, xz * 0.33).rgb * (0.7 + 0.6 * texture2D(uDirt, xz * 1.37).a); dcol *= dcol;',
         'float slope = 1.0 - normalize(vWN).y;',
         'float rockAmt = smoothstep(0.13, 0.27, slope + (macro2 - 0.5) * 0.16 + smoothstep(30.0, 62.0, vWP.y) * 0.22);',
-        'float shore = 1.0 - smoothstep(' + (WATER + 0.1).toFixed(2) + ', ' + (WATER + 1.3).toFixed(2) + ', vWP.y + (macro2 - 0.5) * 1.1);',
-        'float dirtAmt = max(max(msk.g, shore * 0.92), (1.0 - msk.r) * 0.55 * (1.0 - rockAmt));',
+        'float shore = 1.0 - smoothstep(' + (WATER + 0.1).toFixed(2) + ', ' + (WATER + FW.pal.shoreTop).toFixed(2) + ', vWP.y + (macro2 - 0.5) * 1.1);',
+        'float dirtAmt = max(max(msk.g, shore * 0.92), (1.0 - msk.r) * ' + FW.pal.bare.toFixed(2) + ' * (1.0 - rockAmt));',
         'vec3 tcol = mix(gcol, dcol * mix(vec3(1.0), vec3(0.72, 0.70, 0.66), shore), dirtAmt); tcol = mix(tcol, rcol, rockAmt);',
-        'tcol *= mix(0.42, 1.0, smoothstep(' + (WATER - 0.5).toFixed(2) + ', ' + (WATER + 0.3).toFixed(2) + ', vWP.y));',
+        'tcol *= mix(' + (FW.pal.wetDark || 0.42).toFixed(2) + ', 1.0, smoothstep(' + (WATER - 0.5).toFixed(2) + ', ' + (WATER + 0.3).toFixed(2) + ', vWP.y));',
         'tcol *= 1.0 - msk.b * 0.6 * smoothstep(' + (FW.Q.shadowR * 0.72).toFixed(1) + ', ' + (FW.Q.shadowR * 0.98).toFixed(1) + ', distance(cameraPosition.xz, xz));',
         'diffuseColor.rgb *= tcol;'
       ].join('\n'))
@@ -168,7 +168,8 @@ FW.initWorld = function (scene) {
   FW.buildHeights(); buildHeightTex(); buildMask();
   FW.makeTextures();
   buildSky(scene); buildLight(scene); buildTerrain(scene);
-  FW.stone = FW.stoneMaterial(FW.tex.stone, { scale: 0.34, bump: 1.1, moss: 0.85 });
-  FW.rockMat = FW.stoneMaterial(FW.tex.rock, { scale: 0.21, bump: 1.5, moss: 1.25, color: 0xd8d2c8 });
+  FW.stone = FW.stoneMaterial(FW.tex.stone, { scale: 0.34, bump: 1.1, moss: FW.cfg.moss === undefined ? 0.85 : FW.cfg.moss });
+  FW.wood = FW.stoneMaterial(FW.tex.wood, { scale: 0.5, bump: 1.2, moss: 0 });
+  FW.rockMat = FW.stoneMaterial(FW.tex.rock, { scale: 0.21, bump: 1.5, moss: FW.cfg.moss === undefined ? 1.25 : FW.cfg.moss, color: 0xd8d2c8 });
 };
 })();

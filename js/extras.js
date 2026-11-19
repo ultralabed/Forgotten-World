@@ -6,7 +6,7 @@ FW.noReflect = [];
 
 /* ---------- water ---------- */
 FW.buildWater = function (scene) {
-  var Q = FW.Q, rt = null, texMat = new T.Matrix4();
+  var Q = FW.Q, rt = null, texMat = new T.Matrix4(), WC = FW.cfg.water || {}, wS = WC.shallow || 'vec3(0.20, 0.23, 0.16)', wD = WC.deep || 'vec3(0.035, 0.085, 0.10)', wR = (WC.range || 3.0).toFixed(1), wSize = WC.size || SIZE;
   if (Q.reflect) { rt = new T.WebGLRenderTarget(Q.reflectSize, Q.reflectSize, { minFilter: T.LinearFilter, magFilter: T.LinearFilter, format: T.RGBAFormat }); rt.texture.encoding = T.sRGBEncoding; }
   var mat = new T.ShaderMaterial({
     uniforms: T.UniformsUtils.merge([T.UniformsLib.fog, { uTime: { value: 0 }, uNoise: { value: null }, uWave: { value: null }, uHeight: { value: null }, uRefl: { value: null }, uReflOn: { value: 0 }, uTexMat: { value: texMat } }]),
@@ -24,13 +24,14 @@ FW.buildWater = function (scene) {
       '  if (uReflOn > 0.5) { vec4 rf = texture2D(uRefl, vPr.xy / vPr.w + nn * 0.018 * k); sky = mix(sky, rf.rgb, smoothstep(0.05, 0.5, rf.a)); }',
       '  float depth = ' + WATER.toFixed(1) + ' - fwHeight(vW.xz);',
       '  float F = 0.035 + 0.965 * pow(1.0 - max(dot(V, N), 0.0), 5.0);',
-      '  vec3 body = mix(vec3(0.20, 0.23, 0.16), vec3(0.035, 0.085, 0.10), smoothstep(0.0, 3.0, depth));',
+      '  vec3 body = mix(' + wS + ', ' + wD + ', smoothstep(0.0, ' + wR + ', depth));',
       '  vec3 col = mix(body, sky, F);',
       '  float sd = max(dot(reflect(-V, normalize(vec3(nn.x * 0.5, 1.0, nn.y * 0.5))), FW_SUN), 0.0);',
       '  col += vec3(1.0, 0.86, 0.62) * (pow(sd, 260.0) * 2.2 + pow(sd, 30.0) * 0.10);',
       '  float foam = smoothstep(0.32, 0.02, depth) * smoothstep(0.35, 0.65, texture2D(uNoise, vW.xz * 0.21 + uTime * 0.01).r + 0.25 * sin(uTime * 0.9 + vW.x * 0.6 + vW.z * 0.4));',
-      '  col = mix(col, vec3(0.80, 0.78, 0.72), foam * 0.5);',
-      '  float alpha = max(mix(0.30, 0.97, smoothstep(0.0, 1.5, depth)), F);',
+      (WC.surf ? '  float sn = texture2D(uNoise, vW.xz * 0.013 + uTime * 0.004).g; foam = max(foam, smoothstep(0.80, 0.98, sin(depth * 4.5 + uTime * 1.1 + sn * 9.0)) * smoothstep(1.5, 0.05, depth) * (0.5 + sn)) ;' : ''),
+      '  col = mix(col, ' + (WC.surf ? 'vec3(0.94, 0.95, 0.92), foam * 0.8' : 'vec3(0.80, 0.78, 0.72), foam * 0.5') + ');',
+      '  float alpha = max(max(mix(' + (WC.clear || 0.30).toFixed(2) + ', 0.97, smoothstep(0.0, ' + (WC.alphaRange || 1.5).toFixed(1) + ', depth)), F), foam * 0.8);',
       '  gl_FragColor = vec4(col, alpha);',
       '  #include <fog_fragment>',
       '}'
@@ -38,16 +39,16 @@ FW.buildWater = function (scene) {
     transparent: true, depthWrite: false, fog: true
   });
   mat.uniforms.uTime = FW.uTime; mat.uniforms.uNoise.value = FW.tex.noise; mat.uniforms.uWave.value = FW.tex.wave; mat.uniforms.uHeight = FW.heightTex; mat.uniforms.uTexMat.value = texMat; if (rt) mat.uniforms.uRefl.value = rt.texture;
-  var mesh = new T.Mesh(new T.PlaneGeometry(SIZE, SIZE, 1, 1).rotateX(-Math.PI / 2), mat); mesh.position.y = WATER; mesh.renderOrder = 2; scene.add(mesh); FW.noReflect.push(mesh);
+  var mesh = new T.Mesh(new T.PlaneGeometry(wSize, wSize, 1, 1).rotateX(-Math.PI / 2), mat); mesh.position.y = WATER; mesh.renderOrder = 2; scene.add(mesh); FW.noReflect.push(mesh);
 
   /* mirrored camera, as in three.js Reflector */
   var vcam = new T.PerspectiveCamera(), plane = new T.Plane(), nrm = new T.Vector3(0, 1, 0), rp = new T.Vector3(0, WATER, 0), cw = new T.Vector3(), rot = new T.Matrix4(), look = new T.Vector3(), view = new T.Vector3(), target = new T.Vector3(), clip = new T.Vector4(), q = new T.Vector4();
-  var lakes = [new T.Vector3(-96, WATER, -74), new T.Vector3(110, WATER, 70), new T.Vector3(70, WATER, 0)], sph = new T.Sphere(), fr = new T.Frustum(), pm = new T.Matrix4();
+  var lakes = (FW.cfg.lakes || []).map(function (l) { var v = new T.Vector3(l[0], WATER, l[1]); v.r = l[2]; return v; }), sph = new T.Sphere(), fr = new T.Frustum(), pm = new T.Matrix4();
   FW.water = { mesh: mesh, on: !!rt, tick: 0,
     render: function (renderer, scene, camera) {
       if (!rt || !this.on) { mat.uniforms.uReflOn.value = 0; return; }
       pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); fr.setFromProjectionMatrix(pm);
-      var seen = false, i; for (i = 0; i < lakes.length; i++) { sph.set(lakes[i], i ? 75 : 62); if (fr.intersectsSphere(sph) && camera.position.distanceTo(lakes[i]) < 230) seen = true; }
+      var seen = false, i; for (i = 0; i < lakes.length; i++) { sph.set(lakes[i], lakes[i].r); if (fr.intersectsSphere(sph) && camera.position.distanceTo(lakes[i]) < 170 + lakes[i].r) seen = true; }
       if (!seen || camera.position.y < WATER + 0.2) { mat.uniforms.uReflOn.value = 0; return; }
       cw.setFromMatrixPosition(camera.matrixWorld); rot.extractRotation(camera.matrixWorld);
       view.subVectors(rp, cw); view.reflect(nrm).negate(); view.add(rp);
@@ -74,7 +75,7 @@ FW.buildLife = function (scene) {
   g = new T.InstancedBufferGeometry();
   g.setAttribute('position', new T.Float32BufferAttribute([0, 0, 0.45, 0.07, 0, -0.3, -0.07, 0, -0.3, 0.05, 0, 0.2, 0.05, 0, -0.18, 1.0, 0, -0.1, -0.05, 0, 0.2, -1.0, 0, -0.1, -0.05, 0, -0.18], 3));
   g.setAttribute('aTip', new T.Float32BufferAttribute([0, 0, 0, 0, 0, 1, 0, 1, 0], 1));
-  var flocks = [[-50, -40, 70, 44, 9], [100, 70, 60, 38, 7], [20, 60, 110, 62, 6], [-150, 40, 50, 52, 5]], A = [], Bq = [];
+  var flocks = FW.cfg.flocks, A = [], Bq = [];
   flocks.forEach(function (f, fi) { for (i = 0; i < f[4]; i++) { A.push(f[0] + (rnd() - 0.5) * 16, f[1] + (rnd() - 0.5) * 16, f[2] * (0.8 + rnd() * 0.4), f[3] + rnd() * 9); Bq.push(fi * 2.1 + rnd() * 0.9, (fi % 2 ? -1 : 1) * (0.085 + rnd() * 0.02) * 70 / f[2], 7 + rnd() * 3, 0.55 + rnd() * 0.3); } });
   g.setAttribute('aA', new T.InstancedBufferAttribute(new Float32Array(A), 4)); g.setAttribute('aB', new T.InstancedBufferAttribute(new Float32Array(Bq), 4)); g.instanceCount = A.length / 4;
   var birds = new T.Mesh(g, new T.ShaderMaterial({
@@ -82,12 +83,12 @@ FW.buildLife = function (scene) {
     vertexShader: 'attribute float aTip; attribute vec4 aA, aB; uniform float uTime;\n#include <fog_pars_vertex>\nvoid main(){ float an = aB.x + uTime * aB.y; vec3 c = vec3(aA.x + cos(an) * aA.z, aA.w + sin(uTime * 0.23 + aB.x * 3.0) * 4.0, aA.y + sin(an) * aA.z * 0.72);' +
       ' vec3 f = normalize(vec3(-sin(an), 0.0, cos(an) * 0.72)) * sign(aB.y); vec3 r = vec3(f.z, 0.0, -f.x); float fl = sin(uTime * aB.z + aB.x * 9.0) * (0.55 + 0.45 * sin(uTime * 0.6 + aB.x * 5.0));' +
       ' vec3 p = c + (r * position.x + f * position.z) * aB.w * 1.5 + vec3(0.0, aTip * fl * 0.75 * aB.w, 0.0); vec4 mvPosition = viewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mvPosition;\n#include <fog_vertex>\n}',
-    fragmentShader: 'precision highp float;\n#include <fog_pars_fragment>\nvoid main(){ gl_FragColor = vec4(0.07, 0.065, 0.07, 1.0);\n#include <fog_fragment>\n}',
+    fragmentShader: 'precision highp float;\n#include <fog_pars_fragment>\nvoid main(){ gl_FragColor = vec4(' + (FW.cfg.birdColor || '0.07, 0.065, 0.07') + ', 1.0);\n#include <fog_fragment>\n}',
     side: T.DoubleSide, fog: true }));
   birds.material.uniforms.uTime = FW.uTime; birds.frustumCulled = false; scene.add(birds);
 
   /* leaves and seeds: small tumbling flakes in a box that travels with you */
-  n = Q.leaves; g = new T.InstancedBufferGeometry();
+  n = FW.cfg.leaves === false ? 1 : Q.leaves; g = new T.InstancedBufferGeometry();
   g.setAttribute('position', new T.Float32BufferAttribute([-1, -0.6, 0, 1, -0.6, 0, -1, 0.6, 0, 1, 0.6, 0], 3)); g.setIndex([0, 1, 2, 2, 1, 3]);
   var lo = new Float32Array(n * 4), lc = new Float32Array(n * 3);
   for (i = 0; i < n; i++) { lo[i * 4] = rnd() * 44; lo[i * 4 + 1] = rnd() * 16; lo[i * 4 + 2] = rnd() * 44; lo[i * 4 + 3] = rnd(); var w = rnd(); lc[i * 3] = 0.55 + w * 0.4; lc[i * 3 + 1] = 0.36 + w * 0.36; lc[i * 3 + 2] = 0.10 + w * 0.12; }
@@ -98,7 +99,7 @@ FW.buildLife = function (scene) {
       ' w += (ax * position.x + ay * position.y) * (0.022 + aOff.w * 0.026); vec3 d = w - uCam; vA = 1.0 - smoothstep(15.0, 21.0, max(abs(d.x), abs(d.z))); vA *= smoothstep(1.5, 4.0, length(d)); vC = aCol * (0.55 + 0.6 * abs(ay.y));' +
       ' gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0); if (vA < 0.02) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }',
     fragmentShader: 'precision highp float; varying vec3 vC; varying float vA; void main(){ gl_FragColor = vec4(vC, vA); }', transparent: true, depthWrite: false, side: T.DoubleSide }));
-  leaves.frustumCulled = false; leaves.renderOrder = 3; scene.add(leaves); FW.noReflect.push(leaves);
+  leaves.frustumCulled = false; leaves.visible = FW.cfg.leaves !== false; leaves.renderOrder = 3; scene.add(leaves); FW.noReflect.push(leaves);
 
   /* dust that catches the low sun */
   n = Q.motes; g = new T.BufferGeometry(); var mp = new Float32Array(n * 3), ms = new Float32Array(n);
@@ -133,7 +134,7 @@ FW.Post = function (renderer) {
     '  vec2 q = vUv - 0.5; c *= 1.0 - dot(q, q) * 0.55;',
     '  c += (hash(vUv * 917.0 + uTime) - 0.5) * 0.022;',
     '  gl_FragColor = vec4(c, 1.0); }'
-  ].join('\n'), { t: { value: null }, tb: { value: null }, tr: { value: null }, uTime: FW.uTime, uRays: { value: 0.6 }, uBloom: { value: 0.32 } });
+  ].join('\n'), { t: { value: null }, tb: { value: null }, tr: { value: null }, uTime: FW.uTime, uRays: { value: 0.6 }, uBloom: { value: FW.cfg.bloom || 0.32 } });
   var main, A, B, C, W = 0, H = 0, sv = new T.Vector3(), fwd = new T.Vector3();
   this.setSize = function (w, h) {
     W = Math.max(2, Math.floor(w)); H = Math.max(2, Math.floor(h)); if (main) { main.dispose(); A.dispose(); B.dispose(); C.dispose(); }

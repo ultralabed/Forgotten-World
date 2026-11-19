@@ -5,7 +5,7 @@ function $(id) { return document.getElementById(id); }
 var FW = window.FW, T = window.THREE, opts = window.FW_OPTS || {};
 if (!T || !FW) { $('fail').hidden = false; $('intro').hidden = true; return; }
 var m = FW.m, WATER = FW.WATER, COARSE = opts.coarse !== undefined ? opts.coarse : !!(window.matchMedia && matchMedia('(pointer:coarse)').matches);
-$('how').textContent = COARSE ? 'Left thumb walks. Right thumb looks around.' : 'Drag to look. W A S D or arrow keys to walk. Hold Shift to run.';
+$('how').textContent = COARSE ? 'Left thumb walks. Right thumb looks around.' : 'Move the mouse to look. W A S D or arrow keys to walk. Hold Shift to run.';
 
 /* quality: a lighter set for phones; it also steps down by itself if frames get slow */
 var Q = FW.Q = {
@@ -16,19 +16,10 @@ var Q = FW.Q = {
 };
 FW.stats = { stoneTris: 0, treeTris: 0 };
 
-var LORE = [
-  'They raised the ring to count the seasons. Then the seasons stopped coming.',
-  'The lake rose one step each year. They kept praying from the step above.',
-  'Someone lit this every night, long after anyone was left to see it.',
-  'A name was carved here. Rain took the letters and kept the stone.',
-  'Nine stones for nine promises. One has lain down to rest.',
-  'A door for the sun to walk through. It still comes, every evening.',
-  'The water was carried here from far away. It left, and its road stayed.'
-];
-var PLACES = [['ring', 'The Ring', 26], ['temple', 'The Drowned Steps', 22], ['tower', 'The Watchfire', 20], ['hamlet', 'Hollow Home', 26], ['grove', 'The Nine', 18], ['arch', 'The Sun Door', 24], ['aqua', 'The Dry River', 20]];
+var CFG = FW.cfg, LORE = CFG.lore, PLACES = CFG.places, SP = CFG.spawn, HEART = CFG.heart;
 
 var renderer, scene, camera, post, relics = [], found = 0, orb, orbL, relicL, beam;
-var pos = new T.Vector3(0, 0, 66), yaw = 0, pitch = 0.09, eye = 0, keys = {}, move = { x: 0, y: 0 }, entered = false, walked = 0, stepAt = 0, seen = {};
+var pos = new T.Vector3(SP.x, 0, SP.z), yaw = SP.yaw, pitch = SP.pitch || 0, eye = 0, locked = false, keys = {}, move = { x: 0, y: 0 }, entered = false, walked = 0, stepAt = 0, seen = {};
 
 function build() {
   try { renderer = new T.WebGLRenderer({ canvas: $('gl'), antialias: false, powerPreference: 'high-performance' }); } catch (e) { $('fail').hidden = false; $('intro').hidden = true; return; }
@@ -67,22 +58,22 @@ function buildRelics() {
     var bm = beamMat(0x7fe3d0), b = new T.Mesh(pg, bm); b.scale.set(0.8, 90, 0.8); b.position.set(s.x, s.y + 45, s.z); b.renderOrder = 5; scene.add(b); FW.noReflect.push(b);
     relics.push({ x: s.x, z: s.z, y: s.y, gem: g, mat: mat, halo: halo, beam: bm, found: false, i: i });
   });
-  orb = new T.Mesh(new T.SphereGeometry(0.34, 24, 16), new T.MeshBasicMaterial({ color: 0xb4fff0, fog: false })); var oh = new T.Sprite(new T.SpriteMaterial({ map: glowTex, color: 0x9ff5e2, blending: T.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.7 })); oh.scale.set(5, 5, 1); orb.add(oh); orb.position.set(0, 13.2, 0); scene.add(orb);
+  orb = new T.Mesh(new T.SphereGeometry(0.34, 24, 16), new T.MeshBasicMaterial({ color: 0xb4fff0, fog: false })); var oh = new T.Sprite(new T.SpriteMaterial({ map: glowTex, color: 0x9ff5e2, blending: T.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.7 })); oh.scale.set(5, 5, 1); orb.add(oh); orb.position.set(HEART.x, HEART.y, HEART.z); scene.add(orb);
   orbL = new T.PointLight(0x7fe3d0, 1.0, 38, 2); orbL.position.copy(orb.position); scene.add(orbL);
   relicL = new T.PointLight(0x7fe3d0, 0, 15, 2); scene.add(relicL);
-  var bm = beamMat(0xffdca0); beam = new T.Mesh(pg, bm); beam.scale.set(5, 260, 5); beam.position.set(0, 142, 0); beam.renderOrder = 5; beam.visible = false; scene.add(beam); beam.userData.mat = bm; FW.noReflect.push(beam);
+  var bm = beamMat(0xffdca0); beam = new T.Mesh(pg, bm); beam.scale.set(5, 260, 5); beam.position.set(HEART.x, HEART.y + 129, HEART.z); beam.renderOrder = 5; beam.visible = false; scene.add(beam); beam.userData.mat = bm; FW.noReflect.push(beam);
 }
 function mark(r, quiet) {
   r.found = true; found++; r.mat.color.setHex(0xffd08a); r.halo.material.color.setHex(0xffc070); r.beam.uniforms.uCol.value.setHex(0xffc878); r.beam.uniforms.uAmt.value = 0.16;
   $('count').textContent = 'Relics ' + found + ' / ' + relics.length;
   if (found === relics.length) { beam.visible = true; beam.userData.mat.uniforms.uAmt.value = 0.9; }
-  if (!quiet) { chime(r.i); toast(found < relics.length ? LORE[r.i] : LORE[r.i] + ' All seven are awake. Look to the ring.', found < relics.length ? 7500 : 12000); }
+  if (!quiet) { chime(r.i); toast(found < relics.length ? LORE[r.i] : LORE[r.i] + CFG.finalToast, found < relics.length ? 7500 : 12000); }
 }
 
 /* ---------- walking ---------- */
 function tryMove(dx, dz) {
   var nx = pos.x + dx, nz = pos.z + dz, c = FW.colliders, i, o, ex, ez, d, r;
-  if (Math.hypot(nx, nz) > FW.BOUND) return; if (Math.hypot(nx, nz) > 19.5 && FW.hAt(nx, nz) < WATER + 0.3) return;
+  if (Math.hypot(nx, nz) > FW.BOUND) return; if (FW.groundY(nx, nz) < CFG.wade) return;
   for (i = 0; i < c.length; i++) { o = c[i]; ex = nx - o.x; if (ex > 4 || ex < -4) continue; ez = nz - o.z; d = Math.hypot(ex, ez); r = o.r + 0.35; if (d < r && d > 0.0001) { nx = o.x + ex / d * r; nz = o.z + ez / d * r; } }
   pos.x = nx; pos.z = nz;
 }
@@ -90,13 +81,17 @@ window.addEventListener('keydown', function (e) { keys[e.code] = true; if (enter
 window.addEventListener('keyup', function (e) { keys[e.code] = false; });
 window.addEventListener('blur', function () { keys = {}; });
 var cvs = $('gl'), ptrs = {}, stickEl = $('stick'), knob = stickEl.firstElementChild;
+function lockMouse() { if (COARSE || locked || opts.noLock || !cvs.requestPointerLock) return; try { var pr = cvs.requestPointerLock(); if (pr && pr.catch) pr.catch(function () {}); } catch (_) {} }
+document.addEventListener('pointerlockchange', function () { locked = document.pointerLockElement === cvs; if (!entered) return; var h = $('hint');
+  if (locked) { h.textContent = 'Move the mouse to look · W A S D to walk · Shift to run · Esc frees the mouse'; if (walked > 8) h.hidden = true; } else { h.textContent = 'Click the view to look around with the mouse'; h.hidden = false; } });
 cvs.addEventListener('pointerdown', function (e) {
-  if (!entered) return; try { cvs.setPointerCapture(e.pointerId); } catch (_) {}
+  if (!entered) return; if (e.pointerType === 'mouse') lockMouse(); try { cvs.setPointerCapture(e.pointerId); } catch (_) {}
   var st = e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45 && !stickBusy(); ptrs[e.pointerId] = { x: e.clientX, y: e.clientY, ox: e.clientX, oy: e.clientY, stick: st };
   if (st) { stickEl.style.left = e.clientX + 'px'; stickEl.style.top = e.clientY + 'px'; stickEl.hidden = false; knob.style.transform = ''; } e.preventDefault();
 });
 function stickBusy() { for (var k in ptrs) if (ptrs[k].stick) return true; return false; }
 cvs.addEventListener('pointermove', function (e) {
+  if (locked && e.pointerType === 'mouse') { if (Math.abs(e.movementX) < 400 && Math.abs(e.movementY) < 400) { yaw -= e.movementX * 0.0023; pitch = Math.max(-1.3, Math.min(1.3, pitch - e.movementY * 0.0023)); } return; }
   var p = ptrs[e.pointerId]; if (!p) return;
   if (p.stick) { var dx = e.clientX - p.ox, dy = e.clientY - p.oy, l = Math.hypot(dx, dy), k2 = Math.min(l, 48) / (l || 1); move.x = dx * k2 / 48; move.y = dy * k2 / 48; knob.style.transform = 'translate(' + dx * k2 + 'px,' + dy * k2 + 'px)'; }
   else { var k = e.pointerType === 'touch' ? 0.0055 : 0.0034; yaw -= (e.clientX - p.x) * k; pitch = Math.max(-1.2, Math.min(1.2, pitch - (e.clientY - p.y) * k)); }
@@ -128,7 +123,7 @@ function chirp() {
     g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.075); o.connect(g); g.connect(pan || ac.destination); o.start(t); o.stop(t + 0.09); }
   setTimeout(chirp, 2500 + Math.random() * 9000);
 }
-function footstep() { if (!ac || !noiseBuf) return; var s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), t = ac.currentTime, onStone = Math.hypot(pos.x, pos.z) < 19.5; s.buffer = noiseBuf; s.playbackRate.value = (onStone ? 2.2 : 1.1) + Math.random() * 0.5;
+function footstep() { if (!ac || !noiseBuf) return; var s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), t = ac.currentTime, onStone = CFG.name === 'valley' && Math.hypot(pos.x, pos.z) < 19.5; s.buffer = noiseBuf; s.playbackRate.value = (onStone ? 2.2 : 1.1) + Math.random() * 0.5;
   f.type = 'bandpass'; f.frequency.value = onStone ? 900 : 380; f.Q.value = 0.8; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(onStone ? 0.16 : 0.22, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
   s.connect(f); f.connect(g); g.connect(ac.destination); s.start(t, Math.random() * 2, 0.15); }
 
@@ -138,8 +133,8 @@ function toast(s, ms) { var t = $('toast'); t.textContent = s; t.classList.add('
 function place(s) { var t = $('place'); t.textContent = s; t.classList.add('on'); clearTimeout(placeT); placeT = setTimeout(function () { t.classList.remove('on'); }, 4200); }
 function enter() {
   entered = true; $('intro').hidden = true; $('count').hidden = false; $('count').textContent = 'Relics ' + found + ' / ' + relics.length; startSound();
-  var h = $('hint'); h.textContent = COARSE ? 'Left thumb walks · right thumb looks' : 'Drag to look · W A S D to walk · Shift to run'; h.hidden = false;
-  toast('Follow the old road through the gate. Pale lights mark what is still awake.', 6500);
+  var h = $('hint'); h.textContent = COARSE ? 'Left thumb walks · right thumb looks' : 'Click the view, then move the mouse to look · W A S D to walk'; h.hidden = false; lockMouse();
+  toast(CFG.startToast, 6500);
 }
 
 /* ---------- frame loop ---------- */
@@ -163,13 +158,13 @@ function frame() {
     camera.position.set(pos.x, eye, pos.z); camera.rotation.set(pitch, yaw, 0, 'YXZ');
     for (i = 0; i < relics.length; i++) if (!relics[i].found && Math.hypot(pos.x - relics[i].x, pos.z - relics[i].z) < 4.4) mark(relics[i]);
     for (i = 0; i < PLACES.length; i++) { var P = PLACES[i], S = FW.SITES[P[0]]; if (!seen[P[0]] && Math.hypot(pos.x - S.x, pos.z - S.z) < P[2]) { seen[P[0]] = 1; place(P[1]); } }
-    if (lakeG) { var dl = Math.min(Math.hypot(pos.x + 96, pos.z + 74) - 40, Math.hypot(pos.x - 110, pos.z - 70) - 50, Math.hypot(pos.x - 70, pos.z) - 16); lakeG.gain.value = 0.05 * (1 - m.sstep(4, 40, dl)); }
-  } else { orbit += dt * 0.03; var oa = 0.61 + Math.sin(orbit) * 0.75, R = 46; camera.position.set(Math.sin(oa) * R, FW.groundY(0, 40) + 5.2, Math.cos(oa) * R); camera.lookAt(0, 8.2, 0); }
+    if (lakeG) lakeG.gain.value = (CFG.waterGain || 0.05) * CFG.waterNear(pos.x, pos.z);
+  } else { orbit += dt * 0.03; var OB = CFG.orbit, oa = OB.a + Math.sin(orbit) * (OB.swing || 0.75); camera.position.set(OB.x + Math.sin(oa) * OB.R, FW.groundY(OB.hx, OB.hz) + OB.h, OB.z + Math.cos(oa) * OB.R); camera.lookAt(OB.x, OB.look, OB.z); }
   camera.updateMatrixWorld(); FW.uCam.value.copy(camera.position); FW.uSunV.value.copy(FW.SUN).transformDirection(camera.matrixWorldInverse);
   var best = 1e9, near = null;
   for (i = 0; i < relics.length; i++) { var q = relics[i], dd = Math.hypot(camera.position.x - q.x, camera.position.z - q.z); q.gem.rotation.y = t * 0.8 + i; q.gem.position.y = q.y + Math.sin(t * 1.3 + i) * 0.12; if (dd < best) { best = dd; near = q; } }
   if (near && best < 60) { relicL.position.set(near.x, near.y, near.z); relicL.color.setHex(near.found ? 0xffc878 : 0x7fe3d0); relicL.intensity = (near.found ? 1.3 : 0.9) * (1 - m.sstep(30, 60, best)); } else relicL.intensity = 0;
-  var all = found === relics.length; orb.position.y = 13.2 + Math.sin(t * 0.7) * 0.35; orb.scale.setScalar((1 + Math.sin(t * 1.4) * 0.12) * (1 + found * 0.12) * (all ? 1.6 : 1)); orbL.position.y = orb.position.y; orbL.intensity = 1.0 + found * 0.35 + (all ? 1.5 : 0);
+  var all = found === relics.length; orb.position.y = HEART.y + Math.sin(t * 0.7) * 0.35; orb.scale.setScalar((1 + Math.sin(t * 1.4) * 0.12) * (1 + found * 0.12) * (all ? 1.6 : 1)); orbL.position.y = orb.position.y; orbL.intensity = 1.0 + found * 0.35 + (all ? 1.5 : 0);
   FW.sky.position.copy(camera.position); FW.updateShadow(renderer, camera.position);
   FW.water.render(renderer, scene, camera);
   if (post) post.render(scene, camera); else { renderer.setRenderTarget(null); renderer.render(scene, camera); }
